@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2011 rel. 2 (http://www.altova.com) by TeaM DJiNN (TeaM DJiNN) -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<!-- Выписка (в форме электронного документа) -->
+	<xs:element name="Statement">
+		<xs:annotation>
+			<xs:documentation>Выписка</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="RequestDate" type="xs:date">
+					<xs:annotation>
+						<xs:documentation>Дата обращения</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="UniqueID" type="xs:string">
+					<xs:annotation>
+						<xs:documentation>Уникальный идентификационный номер</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="RequestDateTime" type="xs:dateTime">
+					<xs:annotation>
+						<xs:documentation>Дата и время запроса</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="RequestData" type="RequestData">
+					<xs:annotation>
+						<xs:documentation>Данные запроса</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="DepositPresence" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>Наличие месторождений</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="DepositInfo" type="DepositInfo" minOccurs="0" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Сведения о месторождении</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="LicenseNumber" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Номер лицензии</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="RequestData">
+		<xs:annotation>
+			<xs:documentation>Данные запроса</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Applicant" type="Applicant">
+				<xs:annotation>
+					<xs:documentation>Заинтересованное лицо</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PlotCoordinates" type="PlotCoordinates">
+				<xs:annotation>
+					<xs:documentation>Координаты участка</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CadastralNumber" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Кадастровый номер</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Applicant">
+		<xs:annotation>
+			<xs:documentation>Заинтересованное лицо</xs:documentation>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="LegalEntity" type="LegalEntity">
+				<xs:annotation>
+					<xs:documentation>Юридическое лицо</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Individual" type="Individual">
+				<xs:annotation>
+					<xs:documentation>Физическое лицо</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="LegalEntity">
+		<xs:annotation>
+			<xs:documentation>Юридическое лицо</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="FullName" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Полное наименование</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LegalForm" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Организационно-правовая форма</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="INN" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>ИНН</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RepresentativeSNILS" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>СНИЛС представителя</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Phone" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Телефон</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Email" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Email</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Individual">
+		<xs:annotation>
+			<xs:documentation>Физическое лицо</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="LastName" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Фамилия</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FirstName" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Имя</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MiddleName" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Отчество (при наличии)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="INN" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>ИНН</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SNILS" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>СНИЛС</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Phone" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Телефон</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Email" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Email</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PlotCoordinates">
+		<xs:annotation>
+			<xs:documentation>Координаты участка</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Plot" type="Plot" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Участок</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Plot">
+		<xs:annotation>
+			<xs:documentation>Тип участка</xs:documentation>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="Point" type="Point">
+				<xs:annotation>
+					<xs:documentation>Точка</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Line" type="Line">
+				<xs:annotation>
+					<xs:documentation>Линия</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Polygon" type="Polygon">
+				<xs:annotation>
+					<xs:documentation>Полигон</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="Point">
+		<xs:annotation>
+			<xs:documentation>Точка</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Latitude" type="xs:decimal">
+				<xs:annotation>
+					<xs:documentation>Широта</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Longitude" type="xs:decimal">
+				<xs:annotation>
+					<xs:documentation>Долгота</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Line">
+		<xs:annotation>
+			<xs:documentation>Линия</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Point" type="Point" minOccurs="2" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Точки линии</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Polygon">
+		<xs:annotation>
+			<xs:documentation>Полигон</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Point" type="Point" minOccurs="3" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Точки полигона</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DepositInfo">
+		<xs:annotation>
+			<xs:documentation>Сведения о месторождении</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="DepositName" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Наименование месторождения</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CadastreNumber" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Номер в кадастре</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>
