@@ -1,0 +1,118 @@
+<!-- template.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PDF Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+        .section h2 {
+            border-bottom: 2px solid #004080;
+            padding-bottom: 10px;
+        }
+        .element {
+            margin-left: 20px;
+        }
+        .attributes {
+            margin-left: 40px;
+            font-style: italic;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <h1>{{ root_element.name }}</h1>
+    {% if root_element.value is not none %}
+        <p>{{ root_element.value }}</p>
+    {% endif %}
+
+    <!-- Отображаем атрибуты корневого элемента -->
+    <div class="attributes">
+        {% for attribute in root_element.attributes %}
+            <h3>{{ attribute.name }}: {{ attribute.value }}</h3>
+        {% endfor %}
+    </div>
+
+    <!-- Рендерим детей корневого элемента -->
+    {% for child in root_element.children %}
+        <div class="element">
+            <h2>{{ child.name }}</h2>
+            {% if child.value is not none %}
+                <p>{{ child.value }}</p>
+            {% endif %}
+
+            <!-- Отображаем атрибуты текущего элемента -->
+            <div class="attributes">
+                {% for attribute in child.attributes %}
+                    <h3>{{ attribute.name }}: {{ attribute.value }}</h3>
+                {% endfor %}
+            </div>
+
+            <!-- Рендерим дочерние элементы текущего элемента -->
+            {% for grandchild in child.children %}
+                <div class="element">
+                    <h3>{{ grandchild.name }}</h3>
+                    {% if grandchild.value is not none %}
+                        <p>{{ grandchild.value }}</p>
+                    {% endif %}
+
+                    <!-- Отображаем атрибуты дочернего элемента -->
+                    <div class="attributes">
+                        {% for attribute in grandchild.attributes %}
+                            <h4>{{ attribute.name }}: {{ attribute.value }}</h4>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Рендерим дочерние элементы дочернего элемента -->
+                    {% for great_grandchild in grandchild.children %}
+                        <div class="element">
+                            <h4>{{ great_grandchild.name }}</h4>
+                            {% if great_grandchild.value is not none %}
+                                <p>{{ great_grandchild.value }}</p>
+                            {% endif %}
+
+                            <!-- Отображаем атрибуты текущего элемента -->
+                            <div class="attributes">
+                                {% for attribute in great_grandchild.attributes %}
+                                    <h5>{{ attribute.name }}: {{ attribute.value }}</h5>
+                                {% endfor %}
+                            </div>
+
+                            <!-- Рендерим дочерние элементы текущего элемента -->
+                            {% for great_great_grandchild in great_grandchild.children %}
+                                <div class="element">
+                                    <h5>{{ great_great_grandchild.name }}</h5>
+                                    {% if great_great_grandchild.value is not none %}
+                                        <p>{{ great_great_grandchild.value }}</p>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+</div>
+</body>
+</html>

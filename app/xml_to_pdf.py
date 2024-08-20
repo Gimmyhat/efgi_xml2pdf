@@ -6,6 +6,7 @@ import platform
 import shutil
 import pdfkit
 import chardet
+from jinja2 import Environment, FileSystemLoader
 
 
 def create_temp_dir(project_path):
@@ -31,18 +32,6 @@ def get_wkhtmltopdf_path():
         raise RuntimeError('Unsupported OS')
 
 
-def parse_xsd_annotations(xsd_path: str) -> dict:
-    schema = xmlschema.XMLSchema(xsd_path)
-    annotations = {}
-
-    for elem in schema.elements.values():
-        annotations[elem.name] = elem.annotation or elem.name
-        for attr_name, attr in elem.attributes.items():
-            annotations[attr_name] = attr.annotation or attr_name
-
-    return annotations
-
-
 def extract_annotations_from_xsd(xsd_path):
     tree = ET.parse(xsd_path)
     root = tree.getroot()
@@ -57,36 +46,50 @@ def extract_annotations_from_xsd(xsd_path):
         if name and doc is not None:
             annotations[name] = doc.text
 
+    for complex_type in root.findall(".//xs:complexType", namespaces):
+        name = complex_type.attrib.get('name')
+        doc = complex_type.find('.//xs:documentation', namespaces)
+        if name and doc is not None:
+            annotations[name] = doc.text
+
     return annotations
 
 
-def parse_xml_to_html(xml_path: str, xsd_annotations: dict) -> str:
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    def parse_element(element):
-        html_content = f"<h2>{xsd_annotations.get(element.tag, element.tag)}</h2>"
-        if element.text and element.text.strip():
-            html_content += f"<p><strong>Value:</strong> {element.text.strip()}</p>"
-        if element.attrib:
-            for attr, value in element.attrib.items():
-                html_content += f"<p><strong>{xsd_annotations.get(attr, attr)}:</strong> {value}</p>"
-        for child in element:
-            html_content += parse_element(child)
-        return html_content
-
-    # Добавляем <meta charset="UTF-8"> в <head>
-    html_content = """
-    <html>
-    <head>
-        <meta charset="UTF-8">
-    </head>
-    <body>
+def parse_element(element, xsd_annotations):
     """
-    html_content += parse_element(root)
-    html_content += "</body></html>"
+    Рекурсивная функция для обработки XML-элементов и создания структуры данных для шаблона.
+    """
+    parsed_data = {
+        "name": xsd_annotations.get(element.tag, element.tag),
+        "value": element.text.strip() if element.text and element.text.strip() else None,
+        "attributes": [],
+        "children": []
+    }
 
-    return html_content
+    # Обработка атрибутов элемента
+    for attr, value in element.attrib.items():
+        parsed_data["attributes"].append({
+            "name": xsd_annotations.get(attr, attr),
+            "value": value
+        })
+
+    # Обработка дочерних элементов
+    for child in element:
+        child_data = parse_element(child, xsd_annotations)
+        if child_data['value'] or child_data['children']:
+            parsed_data["children"].append(child_data)
+
+    return parsed_data
+
+
+def render_template(template_name, context, project_path):
+    """
+    Функция для рендеринга шаблона с использованием Jinja2.
+    """
+    templates_dir = os.path.join(project_path, 'templates')  # Путь к папке с шаблонами
+    env = Environment(loader=FileSystemLoader(templates_dir))
+    template = env.get_template(template_name)
+    return template.render(context)
 
 
 def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
@@ -104,15 +107,27 @@ def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             result = chardet.detect(raw_data)
             encoding = result['encoding']
 
-        # Преобразование XML в HTML с учетом аннотаций из XSD
-        html_content = parse_xml_to_html(xml_path, xsd_annotations)
+        # Парсим XML и подготавливаем данные для шаблона
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        parsed_data = parse_element(root, xsd_annotations)
 
+        # Подготовка данных для шаблона
+        context = {
+            "root_element": parsed_data
+        }
+
+        # Рендерим шаблон с данными
+        html_content = render_template("template.html", context, project_path)
+
+        # Сохраняем сгенерированный HTML во временный файл
         with open(html_path, "w", encoding=encoding) as file:
             file.write(html_content)
 
         # Конвертация HTML в PDF
         config = pdfkit.configuration(wkhtmltopdf=get_wkhtmltopdf_path())
-        pdfkit.from_file(html_path, pdf_path, configuration=config)
+        options = {'enable-local-file-access': ''}
+        pdfkit.from_file(html_path, pdf_path, configuration=config, options=options)
 
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"Файл PDF не был создан: {pdf_path}")
