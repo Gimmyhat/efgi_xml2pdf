@@ -101,7 +101,7 @@ def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
         # Получаем аннотации из XSD схемы
         xsd_annotations = extract_annotations_from_xsd(xsd_path)
 
-        # Определение кодировки XML-файла
+        # Определение кодировки XML-файла (для парсинга, а не для записи HTML)
         with open(xml_path, "rb") as file:
             raw_data = file.read()
             result = chardet.detect(raw_data)
@@ -120,8 +120,8 @@ def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
         # Рендерим шаблон с данными
         html_content = render_template("template.html", context, project_path)
 
-        # Сохраняем сгенерированный HTML во временный файл
-        with open(html_path, "w", encoding=encoding) as file:
+        # Сохраняем сгенерированный HTML во временный файл с кодировкой UTF-8
+        with open(html_path, "w", encoding="utf-8") as file:  # Принудительное использование UTF-8
             file.write(html_content)
 
         # Конвертация HTML в PDF
