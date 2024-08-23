@@ -1,7 +1,6 @@
-# \efgi-xml2pdf\app\main_app.py
 import os
 import traceback
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Body, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -28,14 +27,17 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 
-def handle_xml(xml_content: str, project_path: str, xsd_path: str):
+# Делаем функцию асинхронной, чтобы использовать await для асинхронных вызовов
+async def handle_xml(xml_content: str, project_path: str, xsd_path: str):
     temp_dir = create_temp_dir(project_path)
 
     xml_file_path = os.path.join(temp_dir, "temp.xml")
     with open(xml_file_path, "w", encoding="utf-8") as xml_file:
         xml_file.write(xml_content)
 
-    pdf_path = convert_xml_to_pdf(xml_file_path, project_path, xsd_path)
+    # Используем await для асинхронной функции
+    pdf_path = await convert_xml_to_pdf(xml_file_path, project_path, xsd_path)
+
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"Файл PDF не был создан: {pdf_path}")
 
@@ -63,16 +65,18 @@ async def upload_file_or_xml(
 
         # Проверка на загруженный файл
         if file:
+            # Создание временного пути для файла
             file_path = os.path.join(create_temp_dir(project_path), file.filename)
             with open(file_path, "wb") as f:
-                f.write(file.file.read())
+                f.write(await file.read())  # Читаем файл асинхронно
 
+            # Используем await для вызова асинхронной функции
             pdf_path = await convert_xml_to_pdf(file_path, project_path, xsd_path)
 
         # Проверка на XML в теле запроса
         elif request.headers.get("Content-Type") == "application/xml":
             xml_body = await request.body()
-            pdf_path = handle_xml(xml_body.decode("utf-8"), project_path, xsd_path)
+            pdf_path = await handle_xml(xml_body.decode("utf-8"), project_path, xsd_path)  # Используем await
 
         else:
             raise HTTPException(status_code=400, detail="No file or XML data provided")
@@ -80,6 +84,7 @@ async def upload_file_or_xml(
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file was not created: {pdf_path}")
 
+        # Возвращаем PDF файл в ответе
         return StreamingResponse(open(pdf_path, "rb"), media_type="application/pdf",
                                  headers={"Content-Disposition": "inline; filename=document.pdf"})
 

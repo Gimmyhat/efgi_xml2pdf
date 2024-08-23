@@ -1,3 +1,4 @@
+# xml_to_pdf.py
 import asyncio
 import xml.etree.ElementTree as ET
 import os
@@ -113,7 +114,7 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             "inv": find_value_in_xml(root, 'UniqueID'),
             "coords": extract_coordinates_from_xml(root),
             "cad": find_value_in_xml(root, 'CadastralNumber'),
-            "is_deposit": bool(find_value_in_xml(root, 'DepositPresence')),
+            "is_deposit": find_value_in_xml(root, 'DepositPresence'),
             "signature": "Примерная подпись",
             "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             # Добавляем данные о месторождении, если оно есть

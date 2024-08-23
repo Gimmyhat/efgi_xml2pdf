@@ -20,6 +20,7 @@ COPY . /app
 
 # Копируем файл зависимостей и устанавливаем Python-зависимости
 COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Открываем порт для FastAPI
