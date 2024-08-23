@@ -1,3 +1,4 @@
+# \efgi-xml2pdf\app\main_app.py
 import os
 import traceback
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Body, Request
@@ -66,7 +67,7 @@ async def upload_file_or_xml(
             with open(file_path, "wb") as f:
                 f.write(file.file.read())
 
-            pdf_path = convert_xml_to_pdf(file_path, project_path, xsd_path)
+            pdf_path = await convert_xml_to_pdf(file_path, project_path, xsd_path)
 
         # Проверка на XML в теле запроса
         elif request.headers.get("Content-Type") == "application/xml":

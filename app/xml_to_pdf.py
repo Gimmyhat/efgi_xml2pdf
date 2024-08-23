@@ -1,12 +1,12 @@
-# xml_to_pdf.py
+import asyncio
 import xml.etree.ElementTree as ET
-import xmlschema
 import os
 import platform
 import shutil
 import pdfkit
-import chardet
 from jinja2 import Environment, FileSystemLoader
+from datetime import datetime
+from app.pdf_signer import sign_pdf
 
 
 def create_temp_dir(project_path):
@@ -25,171 +25,127 @@ def delete_temp_dir(temp_dir):
 
 def get_wkhtmltopdf_path():
     if platform.system() == 'Windows':
-        return r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'  # Убедитесь, что путь правильный
+        return r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
     elif platform.system() == 'Linux':
-        return '/usr/bin/wkhtmltopdf'  # Путь для Linux
+        return '/usr/bin/wkhtmltopdf'
     else:
         raise RuntimeError('Unsupported OS')
 
 
-def extract_attributes_from_xsd(xsd_path):
-    tree = ET.parse(xsd_path)
-    root = tree.getroot()
-    namespaces = {'xs': 'http://www.w3.org/2001/XMLSchema'}
-
-    attributes_data = {}
-
-    # Проход по всем element и complexType в XSD
-    for element in root.findall(".//xs:element", namespaces):
-        element_name = element.attrib.get('name')
-
-        # Найдем атрибуты для каждого элемента
-        attributes = element.findall('.//xs:attribute', namespaces)
-        element_attributes = {}
-        for attribute in attributes:
-            attr_name = attribute.attrib.get('name')
-            attr_type = attribute.attrib.get('type')
-            element_attributes[attr_name] = attr_type
-
-        if element_name and element_attributes:
-            attributes_data[element_name] = element_attributes
-
-    return attributes_data
-
-
-def parse_element(element, xsd_attributes):
+def find_value_in_xml(element, target_name):
     """
-    Рекурсивная функция для обработки XML-элементов и создания структуры данных для шаблона.
+    Рекурсивно ищет значение элемента по имени тега в XML.
     """
-    parsed_data = {
-        "name": element.tag,
-        "value": element.text.strip() if element.text and element.text.strip() else None,
-        "attributes": [],
-        "children": []
-    }
+    if element.tag == target_name and element.text:
+        return element.text.strip()
 
-    # Обработка атрибутов элемента на основе информации из XSD
-    element_attributes = xsd_attributes.get(element.tag, {})
-    for attr, value in element.attrib.items():
-        attr_type = element_attributes.get(attr, 'unknown')
-        parsed_data["attributes"].append({
-            "name": attr,
-            "value": value,
-            "type": attr_type  # Добавляем тип атрибута
-        })
-
-    # Обработка дочерних элементов
     for child in element:
-        child_data = parse_element(child, xsd_attributes)
-        if child_data['value'] or child_data['children']:
-            parsed_data["children"].append(child_data)
+        result = find_value_in_xml(child, target_name)
+        if result is not None:
+            return result
 
-    return parsed_data
+    return None
+
+
+def find_multiple_values_in_xml(element, target_name):
+    """
+    Ищет все значения элементов с указанным именем тега в XML.
+    Возвращает список всех найденных значений.
+    """
+    results = []
+
+    if element.tag == target_name and element.text:
+        results.append(element.text.strip())
+
+    for child in element:
+        results.extend(find_multiple_values_in_xml(child, target_name))
+
+    return results
+
+
+def extract_coordinates_from_xml(element):
+    """
+    Извлекает координаты из XML элемента.
+    """
+    coordinates = []
+
+    for point in element.findall('.//Point'):
+        latitude = find_value_in_xml(point, 'Latitude')
+        longitude = find_value_in_xml(point, 'Longitude')
+        if latitude and longitude:
+            coordinates.append(f"{latitude}, {longitude}")
+
+    return coordinates
 
 
 def render_template(template_name, context, project_path):
     """
     Функция для рендеринга шаблона с использованием Jinja2.
     """
-    templates_dir = os.path.join(project_path, 'templates')  # Путь к папке с шаблонами
+    templates_dir = os.path.join(project_path, 'templates')
     env = Environment(loader=FileSystemLoader(templates_dir))
     template = env.get_template(template_name)
     return template.render(context)
 
 
-def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
+async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
     try:
         temp_dir = create_temp_dir(project_path)
         html_path = os.path.join(temp_dir, "temp.html")
         pdf_path = os.path.join(temp_dir, "output.pdf")
+        signed_pdf_path = os.path.join(temp_dir, "signed_output.pdf")
 
-        # Получаем аннотации из XSD схемы
-        xsd_annotations = extract_attributes_from_xsd(xsd_path)
-
-        # Определение кодировки XML-файла (для парсинга, а не для записи HTML)
-        with open(xml_path, "rb") as file:
-            raw_data = file.read()
-            result = chardet.detect(raw_data)
-            encoding = result['encoding']
-
-        # Парсим XML и подготавливаем данные для шаблона
+        # Парсим XML файл
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        data = parse_element(root, xsd_annotations)
 
-        # Преобразование данных из словаря в формат, подходящий для шаблона
+        # Извлекаем данные напрямую из XML
         context = {
-            "name": find_value(data, 'FullName'),
-            "last_name": find_value(data, 'LastName'),  # Добавляем фамилию
-            "first_name": find_value(data, 'FirstName'),  # Добавляем имя
-            "middle_name": find_value(data, 'MiddleName'),  # Добавляем отчество
-            "inn": find_value(data, 'INN'),
-            "snils": find_value(data, 'RepresentativeSNILS'),
-            "tel": find_value(data, 'Phone'),
-            "email": find_value(data, 'Email'),
-            "date": find_value(data, 'RequestDate'),
-            "inv": find_value(data, 'UniqueID'),
-            "coords": extract_coordinates(data),  # Функция для извлечения координат
-            "cad": find_value(data, 'CadastralNumber')
+            "name": find_value_in_xml(root, 'FullName'),
+            "last_name": find_value_in_xml(root, 'LastName'),
+            "first_name": find_value_in_xml(root, 'FirstName'),
+            "middle_name": find_value_in_xml(root, 'MiddleName'),
+            "inn": find_value_in_xml(root, 'INN'),
+            "snils": find_value_in_xml(root, 'RepresentativeSNILS'),
+            "tel": find_value_in_xml(root, 'Phone'),
+            "email": find_value_in_xml(root, 'Email'),
+            "date": find_value_in_xml(root, 'RequestDate'),
+            "inv": find_value_in_xml(root, 'UniqueID'),
+            "coords": extract_coordinates_from_xml(root),
+            "cad": find_value_in_xml(root, 'CadastralNumber'),
+            "is_deposit": bool(find_value_in_xml(root, 'DepositPresence')),
+            "signature": "Примерная подпись",
+            "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            # Добавляем данные о месторождении, если оно есть
+            "deposit_info": {
+                "name": find_value_in_xml(root, 'DepositName'),
+                "cad_num": find_value_in_xml(root, 'CadastreNumber'),
+                "licenses": ', '.join(find_multiple_values_in_xml(root, 'LicenseNumber'))
+            } if find_value_in_xml(root, 'DepositPresence') else None
         }
 
-        # Рендерим шаблон с данными
+        # Рендерим шаблон и продолжаем с теми же шагами
         html_content = render_template("template2.html", context, project_path)
 
-        # Сохраняем сгенерированный HTML во временный файл с кодировкой UTF-8
-        with open(html_path, "w", encoding="utf-8") as file:  # Принудительное использование UTF-8
+        # Сохраняем HTML и создаем PDF
+        with open(html_path, "w", encoding="utf-8") as file:
             file.write(html_content)
 
-        # Конвертация HTML в PDF
         config = pdfkit.configuration(wkhtmltopdf=get_wkhtmltopdf_path())
-        options = {'enable-local-file-access': ''}
+        options = {'enable-local-file-access': '', 'dpi': 400}
         pdfkit.from_file(html_path, pdf_path, configuration=config, options=options)
 
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"Файл PDF не был создан: {pdf_path}")
 
-        return pdf_path
+        # Подписываем PDF
+        cert_path = os.path.join(project_path, 'certs', 'cert.pem')
+        private_key_path = os.path.join(project_path, 'certs', 'private_key.pem')
+        private_key_password = "042520849"
+
+        await sign_pdf(pdf_path, signed_pdf_path, cert_path, private_key_path, password=private_key_password)
+
+        return signed_pdf_path
     except Exception as e:
         print(f"Ошибка при конвертации XML в PDF: {e}")
         raise
-
-
-def find_value(data, target_name):
-    """
-    Рекурсивно ищет значение элемента по имени в словаре.
-
-    :param data: Словарь, представляющий дерево элементов.
-    :param target_name: Имя элемента, значение которого нужно найти.
-    :return: Значение элемента с именем target_name, или None, если не найдено.
-    """
-    # Если текущий элемент содержит нужное имя, возвращаем его значение
-    if data['name'] == target_name:
-        return data['value']
-
-    # Если элемент имеет детей, рекурсивно ищем среди них
-    if 'children' in data:
-        for child in data['children']:
-            result = find_value(child, target_name)
-            if result is not None:
-                return result
-
-    # Если имя не найдено в текущем элементе или среди детей, возвращаем None
-    return None
-
-
-def extract_coordinates(data):
-    coords = []
-
-    # Поиск координат в словаре
-    def recursive_search(d):
-        if d['name'] == 'Point':
-            lat = find_value(d, 'Latitude')
-            lon = find_value(d, 'Longitude')
-            if lat and lon:
-                coords.append(f"{lat}, {lon}")
-        if 'children' in d:
-            for child in d['children']:
-                recursive_search(child)
-
-    recursive_search(data)
-    return coords
