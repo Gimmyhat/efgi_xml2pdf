@@ -33,6 +33,11 @@
 						<xs:documentation>Наличие месторождений</xs:documentation>
 					</xs:annotation>
 				</xs:element>
+				<xs:element name="HasAreaInCity" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>В границах земельного участка</xs:documentation>
+					</xs:annotation>
+				</xs:element>
 				<xs:element name="DepositInfo" type="DepositInfo" minOccurs="0" maxOccurs="unbounded">
 					<xs:annotation>
 						<xs:documentation>Сведения о месторождении</xs:documentation>

@@ -22,8 +22,8 @@ async def sign_pdf(input_pdf_path, output_pdf_path, cert_path, private_key_path,
             # Метаданные подписи
             signature_meta = PdfSignatureMetadata(field_name="Signature1")
 
-            # Размеры и позиция поля подписи в футере
-            sig_field_spec = SigFieldSpec(sig_field_name="Signature1", box=(60, 50, 200, 100))
+            # Размеры и позиция поля подписи (должны быть соответствующие координаты, где будет размещена подпись)
+            sig_field_spec = SigFieldSpec(sig_field_name="Signature1", box=(0, 0, 0, 0))  # Пустая область для скрытия
 
             # Добавляем поле подписи в PDF
             append_signature_field(w, sig_field_spec)

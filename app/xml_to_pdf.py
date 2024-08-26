@@ -79,6 +79,23 @@ def extract_coordinates_from_xml(element):
     return coordinates
 
 
+def extract_deposit_info_from_xml(root):
+    """
+    Извлекает данные о всех месторождениях из XML.
+    """
+    deposits = []
+
+    for deposit in root.findall('.//DepositInfo'):
+        deposit_data = {
+            "name": find_value_in_xml(deposit, 'DepositName'),
+            "cad_num": find_value_in_xml(deposit, 'CadastreNumber'),
+            "licenses": ', '.join(find_multiple_values_in_xml(deposit, 'LicenseNumber'))
+        }
+        deposits.append(deposit_data)
+
+    return deposits
+
+
 def render_template(template_name, context, project_path):
     """
     Функция для рендеринга шаблона с использованием Jinja2.
@@ -117,15 +134,12 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             "is_deposit": find_value_in_xml(root, 'DepositPresence'),
             "signature": "Примерная подпись",
             "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            # Добавляем данные о месторождении, если оно есть
-            "deposit_info": {
-                "name": find_value_in_xml(root, 'DepositName'),
-                "cad_num": find_value_in_xml(root, 'CadastreNumber'),
-                "licenses": ', '.join(find_multiple_values_in_xml(root, 'LicenseNumber'))
-            } if find_value_in_xml(root, 'DepositPresence') else None
+            # Собираем список всех месторождений
+            "deposit_info_list": extract_deposit_info_from_xml(root) if find_value_in_xml(root,
+                                                                                          'DepositPresence') else None
         }
 
-        # Рендерим шаблон и продолжаем с теми же шагами
+        # Рендерим шаблон
         html_content = render_template("template2.html", context, project_path)
 
         # Сохраняем HTML и создаем PDF
