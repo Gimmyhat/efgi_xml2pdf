@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y \
     wkhtmltopdf \
     libfontconfig1 \
     libxrender1 \
-    fonts-dejavu-core \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

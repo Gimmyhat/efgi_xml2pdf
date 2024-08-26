@@ -132,6 +132,7 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             "coords": extract_coordinates_from_xml(root),
             "cad": find_value_in_xml(root, 'CadastralNumber'),
             "is_deposit": find_value_in_xml(root, 'DepositPresence'),
+            "in_city": find_value_in_xml(root, 'HasAreaInCity'),
             "signature": "Примерная подпись",
             "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             # Собираем список всех месторождений
@@ -147,11 +148,19 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             file.write(html_content)
 
         config = pdfkit.configuration(wkhtmltopdf=get_wkhtmltopdf_path())
-        options = {'enable-local-file-access': '', 'dpi': 400}
-        pdfkit.from_file(html_path, pdf_path, configuration=config, options=options)
-
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"Файл PDF не был создан: {pdf_path}")
+        options = {
+            'enable-local-file-access': '',
+            'dpi': 400,
+            'page-size': 'A4',
+            'margin-top': '20mm',
+            'margin-bottom': '20mm',
+            # 'disable-smart-shrinking': ''
+        }
+        try:
+            pdfkit.from_file(html_path, pdf_path, configuration=config, options=options)
+        except Exception as e:
+            print(f"Ошибка при создании PDF: {e}")
+            raise
 
         # Подписываем PDF
         cert_path = os.path.join(project_path, 'certs', 'cert.pem')
