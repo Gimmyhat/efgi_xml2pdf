@@ -6,13 +6,12 @@ from pyhanko.sign.fields import SigFieldSpec, append_signature_field
 from pyhanko.sign.signers.pdf_signer import PdfSigner
 
 
-async def sign_pdf(input_pdf_path, output_pdf_path, cert_path, private_key_path, password=None):
+async def sign_pdf(input_pdf_path, output_pdf_path, pfx_path, password=None):
     try:
-        # Загружаем сертификат и закрытый ключ
-        signer = signers.SimpleSigner.load(
-            cert_file=cert_path,
-            key_file=private_key_path,
-            key_passphrase=password.encode() if password else None
+        # Загружаем PFX сертификат и закрытый ключ
+        signer = signers.SimpleSigner.load_pkcs12(
+            pfx_file=pfx_path,
+            passphrase=password.encode() if password else None
         )
 
         # Открываем исходный PDF файл
@@ -45,3 +44,4 @@ async def sign_pdf(input_pdf_path, output_pdf_path, cert_path, private_key_path,
     except Exception as e:
         print(f"Ошибка при подписании PDF: {e}")
         raise
+

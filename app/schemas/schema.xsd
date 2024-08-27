@@ -169,6 +169,11 @@
 			<xs:documentation>Координаты участка</xs:documentation>
 		</xs:annotation>
 		<xs:sequence>
+			<xs:element name="CoordinateSystem" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Система координат</xs:documentation>
+				</xs:annotation>
+			</xs:element>
 			<xs:element name="Plot" type="Plot" maxOccurs="unbounded">
 				<xs:annotation>
 					<xs:documentation>Участок</xs:documentation>
@@ -220,9 +225,9 @@
 			<xs:documentation>Линия</xs:documentation>
 		</xs:annotation>
 		<xs:sequence>
-			<xs:element name="Point" type="Point" minOccurs="2" maxOccurs="unbounded">
+			<xs:element name="Point" type="Point" maxOccurs="unbounded">
 				<xs:annotation>
-					<xs:documentation>Точки линии</xs:documentation>
+					<xs:documentation>Точка линии</xs:documentation>
 				</xs:annotation>
 			</xs:element>
 		</xs:sequence>
@@ -232,16 +237,16 @@
 			<xs:documentation>Полигон</xs:documentation>
 		</xs:annotation>
 		<xs:sequence>
-			<xs:element name="Point" type="Point" minOccurs="3" maxOccurs="unbounded">
+			<xs:element name="Point" type="Point" maxOccurs="unbounded">
 				<xs:annotation>
-					<xs:documentation>Точки полигона</xs:documentation>
+					<xs:documentation>Точка полигона</xs:documentation>
 				</xs:annotation>
 			</xs:element>
 		</xs:sequence>
 	</xs:complexType>
 	<xs:complexType name="DepositInfo">
 		<xs:annotation>
-			<xs:documentation>Сведения о месторождении</xs:documentation>
+			<xs:documentation>Информация о месторождении</xs:documentation>
 		</xs:annotation>
 		<xs:sequence>
 			<xs:element name="DepositName" type="xs:string">
@@ -249,14 +254,9 @@
 					<xs:documentation>Наименование месторождения</xs:documentation>
 				</xs:annotation>
 			</xs:element>
-			<xs:element name="CadastreNumber" type="xs:string">
+			<xs:element name="DepositType" type="xs:string">
 				<xs:annotation>
-					<xs:documentation>Номер в кадастре</xs:documentation>
-				</xs:annotation>
-			</xs:element>
-			<xs:element name="LicenseNumber" type="xs:string" minOccurs="0" maxOccurs="unbounded">
-				<xs:annotation>
-					<xs:documentation>Номер лицензии</xs:documentation>
+					<xs:documentation>Тип месторождения</xs:documentation>
 				</xs:annotation>
 			</xs:element>
 		</xs:sequence>

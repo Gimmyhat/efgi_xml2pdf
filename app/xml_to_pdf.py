@@ -74,7 +74,7 @@ def extract_coordinates_from_xml(element):
         latitude = find_value_in_xml(point, 'Latitude')
         longitude = find_value_in_xml(point, 'Longitude')
         if latitude and longitude:
-            coordinates.append(f"{latitude}, {longitude}")
+            coordinates.append(f"{latitude} с.ш., {longitude} в.д.")
 
     return coordinates
 
@@ -133,6 +133,7 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             "cad": find_value_in_xml(root, 'CadastralNumber'),
             "is_deposit": find_value_in_xml(root, 'DepositPresence'),
             "in_city": find_value_in_xml(root, 'HasAreaInCity'),
+            "coordinate_system": find_value_in_xml(root, 'CoordinateSystem'),
             "signature": "Примерная подпись",
             "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             # Собираем список всех месторождений
@@ -162,12 +163,18 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             print(f"Ошибка при создании PDF: {e}")
             raise
 
-        # Подписываем PDF
-        cert_path = os.path.join(project_path, 'certs', 'cert.pem')
-        private_key_path = os.path.join(project_path, 'certs', 'private_key.pem')
-        private_key_password = "042520849"
+        # # Подписываем PDF
+        # cert_path = os.path.join(project_path, 'certs', 'cert.pem')
+        # private_key_path = os.path.join(project_path, 'certs', 'private_key.pem')
+        # private_key_password = "042520849"
+        #
+        # await sign_pdf(pdf_path, signed_pdf_path, cert_path, private_key_path, password=private_key_password)
 
-        await sign_pdf(pdf_path, signed_pdf_path, cert_path, private_key_path, password=private_key_password)
+        # Подписываем PDF с использованием PFX
+        pfx_path = os.path.join(project_path, 'certs', 'generatedDigital.pfx')
+        private_key_password = "12345"
+
+        await sign_pdf(pdf_path, signed_pdf_path, pfx_path, password=private_key_password)
 
         return signed_pdf_path
     except Exception as e:
