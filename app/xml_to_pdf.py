@@ -9,7 +9,6 @@ from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
 from app.pdf_signer import sign_pdf
 
-
 def create_temp_dir(project_path):
     temp_dir = os.path.join(project_path, 'temp')
     os.makedirs(temp_dir, exist_ok=True)
@@ -74,7 +73,7 @@ def extract_coordinates_from_xml(element):
         latitude = find_value_in_xml(point, 'Latitude')
         longitude = find_value_in_xml(point, 'Longitude')
         if latitude and longitude:
-            coordinates.append(f"{latitude} с.ш., {longitude} в.д.")
+            coordinates.append(f"{latitude}, {longitude}")
 
     return coordinates
 
@@ -163,20 +162,20 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             print(f"Ошибка при создании PDF: {e}")
             raise
 
-        # # Подписываем PDF
-        # cert_path = os.path.join(project_path, 'certs', 'cert.pem')
-        # private_key_path = os.path.join(project_path, 'certs', 'private_key.pem')
-        # private_key_password = "042520849"
-        #
-        # await sign_pdf(pdf_path, signed_pdf_path, cert_path, private_key_path, password=private_key_password)
+        # Подписание PDF и создание файла подписи
+        thumbprint = "bb81e944f8f979b56bbd97873720e7c146d80e2d"
+        pin = "00000000"
 
-        # Подписываем PDF с использованием PFX
-        pfx_path = os.path.join(project_path, 'certs', 'generatedDigital.pfx')
-        private_key_password = "12345"
-
-        await sign_pdf(pdf_path, signed_pdf_path, pfx_path, password=private_key_password)
+        # Подписываем PDF с использованием csptest
+        try:
+            await sign_pdf(pdf_path, signed_pdf_path, "ФЕДЕРАЛЬНОЕ АГЕНТСТВО ПО НЕДРОПОЛЬЗОВАНИЮ", "00000000")
+        except Exception as e:
+            print(f"Ошибка при подписании PDF: {str(e)}")
+            # Можно решить, возвращать ли неподписанный PDF или прервать выполнение
+            return pdf_path  # Возвращаем неподписанный PDF в случае ошибки
 
         return signed_pdf_path
+        # return pdf_path
     except Exception as e:
         print(f"Ошибка при конвертации XML в PDF: {e}")
         raise

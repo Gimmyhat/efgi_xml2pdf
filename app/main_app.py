@@ -63,6 +63,7 @@ async def upload_file_or_xml(
     try:
         project_path = os.path.dirname(os.path.abspath(__file__))
         xsd_path = os.path.join(project_path, "schemas/schema.xsd")
+        temp_dir = create_temp_dir(project_path)  # Создаем временный каталог
 
         # Проверка на загруженный файл
         if file:

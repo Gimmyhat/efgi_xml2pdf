@@ -1,70 +1,117 @@
-html, body, #cover {
-    height: 345mm;
-    margin: 0;
-    font: 20px Serif;
-    -webkit-box-sizing: border-box;
-}
+@font-face {
+            font-family: 'PT Serif';
+            src: url('static/fonts/PTSerif-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
 
-#cover {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-}
+        @font-face {
+            font-family: 'PT Serif';
+            src: url('static/fonts/PTSerif-Bold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+        }
 
-#header {
-    height: 40mm;
-    display: -webkit-box;
-    -webkit-box-align: center;
-    -webkit-box-pack: center;
-    border: 1px solid black;
-    margin-bottom: 5mm;
-}
+        @font-face {
+            font-family: 'PT Serif';
+            src: url('static/fonts/PTSerif-Italic.ttf') format('truetype');
+            font-weight: normal;
+            font-style: italic;
+        }
 
-#content {
-    display: -webkit-box;
-    margin-bottom: 5mm;
-}
+        @font-face {
+            font-family: 'PT Serif';
+            src: url('static/fonts/PTSerif-BoldItalic.ttf') format('truetype');
+            font-weight: bold;
+            font-style: italic;
+        }
 
-#left_col,
-#right_col {
-    -webkit-box-flex: 1;
-}
+        html, body, #cover {
+            height: 345mm;
+            margin: 0;
+            font-family: 'PT Serif'; /* Укажите используемый шрифт */
+            font-size: 18px;
+            line-height: 1.2;
+            -webkit-box-sizing: border-box;
+        }
 
-#right_col .row {
-    text-align: right;
-}
+        html, body, #cover {
+            height: 345mm;
+            margin: 0;
+            font: 18px Serif; /* Уменьшенный размер шрифта для экономии пространства */
+            line-height: 1.2; /* Уменьшенная высота строки */
+            -webkit-box-sizing: border-box;
+        }
 
-.brow {
-    font-weight: bold;
-}
+        #cover {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+        }
 
-.line {
-    height: 5mm;
-    border-bottom: 1px solid black;
-    margin-bottom: 5mm;
-}
+        #header {
+            height: 35mm; /* Уменьшенная высота шапки */
+            display: -webkit-box;
+            -webkit-box-align: center;
+            -webkit-box-pack: center;
+            border: 1px solid black;
+            margin-bottom: 5mm;
+        }
 
-.splitter {
-    -webkit-box-flex: 1;
-}
+        .section-heading {
+            font-size: 22px;
+            font-weight: bold;
+            text-align: center;
+            margin: 5mm 0; /* Уменьшенные отступы сверху и снизу */
+            /*border-bottom: 2px solid black;*/
+            padding-bottom: 2mm;
+        }
 
-#footer {
-    display: -webkit-box;
-    height: 40mm;
-    border-left: 1px solid black;
-}
+        .content-section {
+            margin-bottom: 5mm;
+        }
 
-.fcell {
-    display: -webkit-box;
-    -webkit-box-align: center;
-    -webkit-box-pack: center;
-    -webkit-box-flex: 1;
-    border: solid black;
-    border-width: 1px 1px 1px 0;
-}
+        #left_col,
+        #right_col {
+            -webkit-box-flex: 1;
+        }
 
-.signature-box {
-    height: 20mm;
-    border-top: 1px solid black;
-    text-align: center;
-    margin-top: 10mm;
-}
+        #right_col .row {
+            text-align: right;
+        }
+
+        .brow {
+            font-weight: bold;
+            margin-bottom: 3mm;
+        }
+
+        .row {
+            margin-bottom: 2mm; /* Уменьшенные отступы между строками */
+        }
+
+        .line {
+            height: 3mm; /* Уменьшенная высота разделительной линии */
+            border-bottom: 1px solid black;
+            margin-bottom: 3mm;
+        }
+
+        #footer {
+            display: -webkit-box;
+            height: 35mm; /* Уменьшенная высота футера */
+            border-left: 1px solid black;
+        }
+
+        .fcell {
+            display: -webkit-box;
+            -webkit-box-align: center;
+            -webkit-box-pack: center;
+            -webkit-box-flex: 1;
+            border: solid black;
+            border-width: 1px 1px 1px 0;
+        }
+
+        .signature-box {
+            height: 18mm; /* Уменьшенная высота блока подписи */
+            border-top: 1px solid black;
+            text-align: center;
+            margin-top: 8mm;
+        }
