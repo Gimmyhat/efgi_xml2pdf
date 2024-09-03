@@ -1,19 +1,34 @@
-# xml_to_pdf.py
-import asyncio
 import xml.etree.ElementTree as ET
 import os
-import platform
 import shutil
-import pdfkit
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
 from app.pdf_signer import sign_pdf
+from app.signature_stamp import add_signature_stamp
+from weasyprint import HTML
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения из .env файла
+load_dotenv()
+
+debug_env = os.getenv('DEBUG', 'False')
+
+# Преобразуем строковое значение в булево
+DEBUG = debug_env.lower() in ['true', '1', 't', 'y', 'yes']
+
+if DEBUG:
+    name_cert = "TEST"
+    pswd_cert = "12345"
+else:
+    name_cert = "ФЕДЕРАЛЬНОЕ АГЕНТСТВО ПО НЕДРОПОЛЬЗОВАНИЮ"
+    pswd_cert = "00000000"
+
+print(name_cert)
 
 def create_temp_dir(project_path):
     temp_dir = os.path.join(project_path, 'temp')
     os.makedirs(temp_dir, exist_ok=True)
     return temp_dir
-
 
 def delete_temp_dir(temp_dir):
     if os.path.exists(temp_dir):
@@ -22,68 +37,34 @@ def delete_temp_dir(temp_dir):
         except Exception as e:
             print(f"Ошибка при удалении {temp_dir}: {e}")
 
-
-def get_wkhtmltopdf_path():
-    if platform.system() == 'Windows':
-        return r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
-    elif platform.system() == 'Linux':
-        return '/usr/bin/wkhtmltopdf'
-    else:
-        raise RuntimeError('Unsupported OS')
-
-
 def find_value_in_xml(element, target_name):
-    """
-    Рекурсивно ищет значение элемента по имени тега в XML.
-    """
     if element.tag == target_name and element.text:
         return element.text.strip()
-
     for child in element:
         result = find_value_in_xml(child, target_name)
         if result is not None:
             return result
-
     return None
 
-
 def find_multiple_values_in_xml(element, target_name):
-    """
-    Ищет все значения элементов с указанным именем тега в XML.
-    Возвращает список всех найденных значений.
-    """
     results = []
-
     if element.tag == target_name and element.text:
         results.append(element.text.strip())
-
     for child in element:
         results.extend(find_multiple_values_in_xml(child, target_name))
-
     return results
 
-
 def extract_coordinates_from_xml(element):
-    """
-    Извлекает координаты из XML элемента.
-    """
     coordinates = []
-
     for point in element.findall('.//Point'):
         latitude = find_value_in_xml(point, 'Latitude')
         longitude = find_value_in_xml(point, 'Longitude')
         if latitude and longitude:
             coordinates.append(f"{latitude}, {longitude}")
-
     return coordinates
 
-
 def extract_deposit_info_from_xml(root):
-    """
-    Извлекает данные о всех месторождениях из XML.
-    """
     deposits = []
-
     for deposit in root.findall('.//DepositInfo'):
         deposit_data = {
             "name": find_value_in_xml(deposit, 'DepositName'),
@@ -91,19 +72,13 @@ def extract_deposit_info_from_xml(root):
             "licenses": ', '.join(find_multiple_values_in_xml(deposit, 'LicenseNumber'))
         }
         deposits.append(deposit_data)
-
     return deposits
 
-
 def render_template(template_name, context, project_path):
-    """
-    Функция для рендеринга шаблона с использованием Jinja2.
-    """
     templates_dir = os.path.join(project_path, 'templates')
     env = Environment(loader=FileSystemLoader(templates_dir))
     template = env.get_template(template_name)
     return template.render(context)
-
 
 async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
     try:
@@ -135,47 +110,47 @@ async def convert_xml_to_pdf(xml_path: str, project_path: str, xsd_path: str):
             "coordinate_system": find_value_in_xml(root, 'CoordinateSystem'),
             "signature": "Примерная подпись",
             "signature_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            # Собираем список всех месторождений
-            "deposit_info_list": extract_deposit_info_from_xml(root) if find_value_in_xml(root,
-                                                                                          'DepositPresence') else None
+            "debug": DEBUG,
+            "deposit_info_list": extract_deposit_info_from_xml(root) if find_value_in_xml(root, 'DepositPresence') else None
         }
 
-        # Рендерим шаблон
+        context['is_10'] = 1 if len(context['deposit_info_list']) == 10 else 0
+
+        # Рендерим основной шаблон
         html_content = render_template("template2.html", context, project_path)
 
-        # Сохраняем HTML и создаем PDF
+        # Сохраняем HTML для основного шаблона
         with open(html_path, "w", encoding="utf-8") as file:
             file.write(html_content)
 
-        config = pdfkit.configuration(wkhtmltopdf=get_wkhtmltopdf_path())
-        options = {
-            'enable-local-file-access': '',
-            'dpi': 400,
-            'page-size': 'A4',
-            'margin-top': '20mm',
-            'margin-bottom': '20mm',
-            # 'disable-smart-shrinking': ''
-        }
+        # Генерация PDF с помощью weasyprint
         try:
-            pdfkit.from_file(html_path, pdf_path, configuration=config, options=options)
+            html = HTML(string=html_content, base_url=project_path)
+            html.write_pdf(pdf_path)
         except Exception as e:
-            print(f"Ошибка при создании PDF: {e}")
+            print(f"Ошибка при создании PDF с помощью weasyprint: {e}")
             raise
 
-        # Подписание PDF и создание файла подписи
-        thumbprint = "bb81e944f8f979b56bbd97873720e7c146d80e2d"
-        pin = "00000000"
-
-        # Подписываем PDF с использованием csptest
+        # Добавляем штамп на последнюю страницу
         try:
-            await sign_pdf(pdf_path, signed_pdf_path, "ФЕДЕРАЛЬНОЕ АГЕНТСТВО ПО НЕДРОПОЛЬЗОВАНИЮ", "00000000")
+            stamp_pdf_path = os.path.join(temp_dir, "final_output.pdf")
+            add_signature_stamp(pdf_path, stamp_pdf_path, name_cert)
+        except Exception as e:
+            print(f"Ошибка при добавлении штампа: {str(e)}")
+            raise
+
+        # Подписываем PDF с использованием PFX
+        pfx_path = os.path.join(project_path, 'certs', 'generatedDigital.pfx')
+
+        try:
+            await sign_pdf(stamp_pdf_path, signed_pdf_path, pfx_path, name_cert, pswd_cert, test=DEBUG)
         except Exception as e:
             print(f"Ошибка при подписании PDF: {str(e)}")
-            # Можно решить, возвращать ли неподписанный PDF или прервать выполнение
-            return pdf_path  # Возвращаем неподписанный PDF в случае ошибки
+            raise
 
         return signed_pdf_path
-        # return pdf_path
+
     except Exception as e:
         print(f"Ошибка при конвертации XML в PDF: {e}")
         raise
+

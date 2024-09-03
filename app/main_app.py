@@ -28,7 +28,6 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 
-# Делаем функцию асинхронной, чтобы использовать await для асинхронных вызовов
 async def handle_xml(xml_content: str, project_path: str, xsd_path: str):
     temp_dir = create_temp_dir(project_path)
 
@@ -36,7 +35,6 @@ async def handle_xml(xml_content: str, project_path: str, xsd_path: str):
     with open(xml_file_path, "w", encoding="utf-8") as xml_file:
         xml_file.write(xml_content)
 
-    # Используем await для асинхронной функции
     pdf_path = await convert_xml_to_pdf(xml_file_path, project_path, xsd_path)
 
     if not os.path.exists(pdf_path):

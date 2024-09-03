@@ -13,8 +13,18 @@ RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
     expect \
+    fontconfig \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Устанавливаем стандартные шрифты
+RUN apt-get update && apt-get install -y \
+    fonts-roboto \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Обновление кэша шрифтов
+RUN fc-cache -fv
 
 # Копируем архив КриптоПро CSP в контейнер
 COPY linux-amd64_deb.tgz /tmp/linux-amd64_deb.tgz
