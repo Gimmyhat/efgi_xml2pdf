@@ -259,6 +259,11 @@
 					<xs:documentation>Тип месторождения</xs:documentation>
 				</xs:annotation>
 			</xs:element>
+			<xs:element name="last_change_date">
+				<xs:annotation>
+					<xs:documentation>дата и время последнего изменения данных на карте</xs:documentation>
+				</xs:annotation>
+			</xs:element>
 		</xs:sequence>
 	</xs:complexType>
 </xs:schema>
