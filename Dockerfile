@@ -52,11 +52,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     expect \
     && rm -rf /var/lib/apt/lists/*
 
+# Копируем файлы проекта в контейнер
+COPY app /app
+
 # Устанавливаем рабочую директорию
 WORKDIR /app
-
-# Копируем файлы проекта в контейнер
-COPY . /app
 
 # Устанавливаем путь к csptest
 ENV PATH="/opt/cprocsp/bin/amd64:${PATH}"
@@ -65,4 +65,4 @@ ENV PATH="/opt/cprocsp/bin/amd64:${PATH}"
 EXPOSE 8000
 
 # Запуск приложения
-CMD ["uvicorn", "app.main_app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main_app:app", "--host", "0.0.0.0", "--port", "8000"]
