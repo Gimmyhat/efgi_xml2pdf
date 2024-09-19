@@ -1,9 +1,10 @@
 # pdf_utils.py
 import asyncio
-import logging
 import os
 from io import BytesIO
 from datetime import datetime
+from logging import Logger
+
 from pyhanko.sign import signers, PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.signers.pdf_signer import PdfSigner
@@ -17,24 +18,25 @@ import tempfile
 from logger import get_logger
 
 # Настройка логирования
-logger = get_logger(__name__)
+logger: Logger = get_logger(__name__)
 
 
 async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=False):
     if not test:
         try:
-            # Сохраняем BytesIO в файл
-            with tempfile.NamedTemporaryFile(delete=False) as temp_input_file, \
-                    tempfile.NamedTemporaryFile(delete=False) as temp_output_file:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_input_path = os.path.join(temp_dir, "input.pdf")
+                temp_output_path = os.path.join(temp_dir, "output.pdf")
 
-                temp_input_file.write(input_pdf.read())  # Записываем BytesIO в файл
-                temp_input_file.flush()
+                # Записываем PDF во временный файл
+                with open(temp_input_path, "wb") as f:
+                    f.write(input_pdf.read())
 
                 # Формируем команду для csptest
                 command = [
                     "csptest", "-sfsign", "-sign",
-                    "-in", temp_input_file.name,
-                    "-out", temp_output_file.name,
+                    "-in", temp_input_path,
+                    "-out", temp_output_path,
                     "-my", cert_name,
                     "-add"
                 ]
@@ -52,13 +54,10 @@ async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=Fa
                 stdout, stderr = await process.communicate(input=password_bytes)
 
                 if process.returncode == 0:
-                    logging.info(f"PDF успешно подписан и сохранен как {temp_output_file.name}")
-
-                    # Читаем подписанный файл и возвращаем как BytesIO
-                    with open(temp_output_file.name, 'rb') as signed_pdf:
-                        output_pdf.write(signed_pdf.read())
+                    # Читаем подписанный файл и записываем в output_pdf
+                    with open(temp_output_path, "rb") as f:
+                        output_pdf.write(f.read())
                     output_pdf.seek(0)
-
                 else:
                     logger.error(f"Ошибка при подписании PDF. Код возврата: {process.returncode}")
                     logger.error(f"Ошибка: {stderr.decode('utf-8')}")
@@ -85,6 +84,8 @@ async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=Fa
             raise
 
 def register_fonts():
+    roboto_regular = ''
+    roboto_bold = ''
     try:
         roboto_regular = os.path.join('static', 'fonts', 'Roboto-Regular.ttf')
         roboto_bold = os.path.join('static', 'fonts', 'Roboto-Bold.ttf')

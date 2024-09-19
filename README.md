@@ -16,4 +16,6 @@ docker push gimmyhat/efgi-serv-print-257:latest
 kubectl apply -f server-print-deployment.yaml
 ```
 
-http://172.27.239.23:30001/
+http://172.27.239.23:30001/ (test)
+
+http://172.27.239.2:30001/ (prod)

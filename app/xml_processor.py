@@ -1,22 +1,20 @@
-# xml_processor.py
 from datetime import datetime
 import xml.etree.ElementTree as ET
 from io import BytesIO
 import logging
+import os
 
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML, CSS
 
+from config import TEST_MODE, SIGNER_NAME, SIGNER_PASSWORD, PFX_FILE
 from logger import get_logger
 from pdf_utils import add_signature_stamp, sign_pdf
-import os
-
-from config import TEST_MODE, SIGNER_NAME, SIGNER_PASSWORD, PFX_FILE
 
 # Настройка логирования
 logger = get_logger(__name__)
 
-# Установка уровня логирования WARNING для сторонних библиотек
+# Установка уровня логирования для сторонних библиотек
 logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 logging.getLogger('PIL').setLevel(logging.WARNING)
@@ -47,8 +45,6 @@ def find_multiple_values_in_xml(element, target_name):
     return results
 
 
-# xml_processor.py
-
 def extract_coordinates_from_xml(element):
     coordinates = []
     try:
@@ -56,7 +52,7 @@ def extract_coordinates_from_xml(element):
             plot_number = plot.get('Number', '')
             plot_coords = []
             for polygon in plot.findall('.//Polygon'):
-                polygon_coords = [] # Список координат для текущего полигона
+                polygon_coords = []  # Список координат для текущего полигона
                 for point in polygon.findall('.//Point'):
                     latitude = find_value_in_xml(point, 'Latitude')
                     longitude = find_value_in_xml(point, 'Longitude')
@@ -166,10 +162,13 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
         signed_pdf_buffer = BytesIO()
         pfx_path = os.path.join(project_path, 'certs', PFX_FILE)
         await sign_pdf(stamped_pdf_buffer, signed_pdf_buffer, pfx_path, SIGNER_NAME, SIGNER_PASSWORD, test=TEST_MODE)
-        signed_pdf_buffer.seek(0)
+
+        # Ожидание завершения подписания
+        signed_pdf_buffer.seek(0)  # Перемещаем указатель в начало буфера
+        signed_pdf_content = signed_pdf_buffer.read()  # Читаем данные из буфера
 
         logger.info("PDF conversion and signing completed successfully")
-        return signed_pdf_buffer
+        return BytesIO(signed_pdf_content)  # Возвращаем буфер с подписанными данными
 
     except ET.ParseError as e:
         logger.error(f"Error parsing XML: {e}")

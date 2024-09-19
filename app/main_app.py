@@ -1,19 +1,22 @@
-# main_app.py
 import base64
-import logging
+import datetime
 import os
 import shutil
 import tempfile
 import traceback
+import uuid
 from functools import wraps
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.security import HTTPBasic
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.security import HTTPBasic
+from io import BytesIO
+
+from logger import get_logger
 from xml_processor import convert_xml_to_pdf
 import secrets
-from logger import get_logger
 
 # Настройка логирования
 logger = get_logger(__name__)
@@ -32,8 +35,21 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 
+# Путь к директории для сохранения файлов (предполагается, что она примонтирована)
+STORAGE_DIR = os.getenv("STORAGE_DIR", "/mnt")
+STORAGE_PATH = os.path.join(STORAGE_DIR, "input_data")  # Папка для входных данных
+
 # Настройка базовой HTTP-аутентификации
 security = HTTPBasic()
+
+# Создаем папку для сохранения файлов, если она не существует
+if not os.path.exists(STORAGE_PATH):
+    try:
+        os.makedirs(STORAGE_PATH)
+        logger.info(f"Created storage directory: {STORAGE_PATH}")
+    except OSError as e:
+        logger.error(f"Error creating storage directory: {e}")
+        raise HTTPException(status_code=500, detail="Error creating storage directory")
 
 
 # Декоратор для аутентификации
@@ -106,27 +122,54 @@ async def upload_file_or_xml(
     try:
         project_path = os.path.dirname(os.path.abspath(__file__))
 
+        # Генерируем уникальное имя файла с timestamp
+        unique_filename = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4()}"
+
         if file:
-            xml_content = await file.read()
+            file_extension = os.path.splitext(file.filename)[1]
+            file_path = os.path.join(STORAGE_PATH, f"{unique_filename}{file_extension}")
+            with open(file_path, "wb") as f:
+                file_content = await file.read()  # Читаем данные один раз
+                f.write(file_content)
+            xml_content = file_content  # Используем сохраненные данные
         elif request.headers.get("Content-Type") == "application/xml":
-            xml_content = await request.body()
+            file_path = os.path.join(STORAGE_PATH, f"{unique_filename}.xml")
+            with open(file_path, "wb") as f:
+                xml_content = await request.body()
+                f.write(xml_content)
         else:
             raise HTTPException(status_code=400, detail="No file or XML data provided")
+
+        logger.info(f"Saved input data to: {file_path}")
 
         try:
             pdf_buffer = await convert_xml_to_pdf(xml_content.decode("utf-8"), project_path)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        return StreamingResponse(pdf_buffer, media_type="application/pdf",
-                                 headers={"Content-Disposition": "inline; filename=document.pdf"})
+        # Ожидание завершения подписания
+        pdf_buffer.seek(0)  # Перемещаем указатель в начало буфера
+        signed_pdf_content = pdf_buffer.read()  # Читаем данные из буфера
+
+        # Сохранение подписанного PDF
+        signed_pdf_path = os.path.join(STORAGE_PATH, f"{unique_filename}_signed.pdf")
+        with open(signed_pdf_path, "wb") as f:
+            f.write(signed_pdf_content)
+
+        logger.info(f"Saved signed PDF to: {signed_pdf_path}")
+
+        return StreamingResponse(
+            BytesIO(signed_pdf_content),  # Используем буфер с подписанными данными
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline; filename=document.pdf"}
+        )
 
     except Exception as e:
         logger.error(f"Error processing input: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing input: {str(e)}")
 
     finally:
-        cleanup_temp_files()
+        cleanup_temp_files()  # Вызываем cleanup_temp_files только после завершения всех операций
 
 
 # Middleware для логирования запросов и ответов
@@ -140,13 +183,6 @@ async def log_requests(request: Request, call_next):
         raise
     logger.info(f"Response status code: {response.status_code}")
     return response
-
-
-# Обработка HTTP исключений
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTP Exception: {exc.detail}")
-    return HTMLResponse(content=f"HTTP Error: {exc.detail}", status_code=exc.status_code)
 
 
 # Обработка HTTP исключений
