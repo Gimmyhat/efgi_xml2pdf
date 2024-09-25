@@ -1,10 +1,14 @@
 # pdf_utils.py
 import asyncio
+import io
 import os
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from logging import Logger
+from typing import Union
 
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextBox
 from pyhanko.sign import signers, PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.signers.pdf_signer import PdfSigner
@@ -12,7 +16,6 @@ from pdfrw import PdfReader, PdfWriter, PageMerge
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.lib.pagesizes import letter
 import tempfile
 
 from logger import get_logger
@@ -20,17 +23,43 @@ from logger import get_logger
 # Настройка логирования
 logger: Logger = get_logger(__name__)
 
+# Московский часовой пояс
+MOSCOW_TZ = timezone(timedelta(hours=3))
 
-async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=False):
+# Константы для штампа
+STAMP_HEIGHT = 100
+STAMP_PADDING = 10
+STAMP_FONT_REGULAR = 'Roboto-Regular'
+STAMP_FONT_BOLD = 'Roboto-Bold'
+STAMP_FONT_SIZE_REGULAR = 9
+STAMP_FONT_SIZE_BOLD = 10
+
+# Предварительная регистрация шрифтов
+try:
+    roboto_regular = os.path.join('static', 'fonts', 'Roboto-Regular.ttf')
+    roboto_bold = os.path.join('static', 'fonts', 'Roboto-Bold.ttf')
+    pdfmetrics.registerFont(TTFont(STAMP_FONT_REGULAR, roboto_regular))
+    pdfmetrics.registerFont(TTFont(STAMP_FONT_BOLD, roboto_bold))
+except Exception as e:
+    logger.error(f"Error registering fonts: {e}")
+
+
+async def sign_pdf(input_pdf: BytesIO, output_pdf: BytesIO, pfx_path: str,
+                   cert_name: str, password: str, test: bool = False):
+    """
+    Подписывает PDF-файл.
+    """
     if not test:
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_input_path = os.path.join(temp_dir, "input.pdf")
                 temp_output_path = os.path.join(temp_dir, "output.pdf")
 
-                # Записываем PDF во временный файл
+                logger.info(f"Writing PDF to temporary file: {temp_input_path}")
                 with open(temp_input_path, "wb") as f:
                     f.write(input_pdf.read())
+                    f.flush()  # Принудительная запись данных на диск
+                logger.info(f"PDF written to temporary file.")
 
                 # Формируем команду для csptest
                 command = [
@@ -41,7 +70,7 @@ async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=Fa
                     "-add"
                 ]
 
-                # Запускаем процесс с передачей пароля через stdin
+                logger.info(f"Starting csptest with command: {command}")
                 process = await asyncio.create_subprocess_exec(
                     *command,
                     stdin=asyncio.subprocess.PIPE,
@@ -54,18 +83,20 @@ async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=Fa
                 stdout, stderr = await process.communicate(input=password_bytes)
 
                 if process.returncode == 0:
+                    logger.info(f"csptest completed successfully.")
                     # Читаем подписанный файл и записываем в output_pdf
                     with open(temp_output_path, "rb") as f:
                         output_pdf.write(f.read())
                     output_pdf.seek(0)
                 else:
-                    logger.error(f"Ошибка при подписании PDF. Код возврата: {process.returncode}")
-                    logger.error(f"Ошибка: {stderr.decode('utf-8')}")
-                    raise Exception(f"Не удалось подписать PDF. Ошибка: {stderr.decode('utf-8')}")
+                    error_message = stderr.decode('utf-8')
+                    logger.error(f"Error during PDF signing. Return code: {process.returncode}")
+                    logger.error(f"Error: {error_message}")
+                    raise Exception(f"Failed to sign PDF. Error: {error_message}")
 
         except Exception as e:
-            logger.error(f"Ошибка при подписании PDF: {str(e)}")
-            raise
+            logger.error(f"Error during PDF signing: {str(e)}")
+            raise  # Передаем исключение дальше для обработки в вызывающей функции
     else:
         try:
             signer = signers.SimpleSigner.load_pkcs12(
@@ -76,77 +107,157 @@ async def sign_pdf(input_pdf, output_pdf, pfx_path, cert_name, password, test=Fa
             w = IncrementalPdfFileWriter(input_pdf)
             signature_meta = PdfSignatureMetadata(field_name="Signature1")
             pdf_signer = PdfSigner(signature_meta=signature_meta, signer=signer)
-
             await pdf_signer.async_sign_pdf(w, output=output_pdf, existing_fields_only=False)
-
         except Exception as e:
             logger.error(f"Error signing PDF: {e}")
             raise
 
-def register_fonts():
-    roboto_regular = ''
-    roboto_bold = ''
-    try:
-        roboto_regular = os.path.join('static', 'fonts', 'Roboto-Regular.ttf')
-        roboto_bold = os.path.join('static', 'fonts', 'Roboto-Bold.ttf')
-        pdfmetrics.registerFont(TTFont('Roboto-Regular', roboto_regular))
-        pdfmetrics.registerFont(TTFont('Roboto-Bold', roboto_bold))
-    except Exception as e:
-        logger.error(f"Error registering fonts: {e}")
-        logger.error(f"Attempted paths: \nRegular: {roboto_regular}\nBold: {roboto_bold}")
-        raise
 
-def create_stamp_pdf(signer_name, page_width, font_regular='Roboto-Regular', font_bold='Roboto-Bold'):
+def create_stamp_pdf(signer_name: str, page_width: float, page_height: float) -> PdfReader:
+    """
+    Создает PDF-файл со штампом.
+    """
     packet = BytesIO()
-    can = canvas.Canvas(packet, pagesize=letter)
+    can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+
+    current_time = datetime.now(MOSCOW_TZ).strftime('%d.%m.%Y %H:%M:%S')
 
     text1 = "Документ подписан электронной подписью"
     text2 = f"Подписант: {signer_name}"
-    text3 = f"Дата и время (UTC): {datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')}"
+    text3 = f"Дата и время (МСК): {current_time}"
 
-    text_width1 = pdfmetrics.stringWidth(text1, font_bold, 10)
-    text_width2 = pdfmetrics.stringWidth(text2, font_regular, 9)
-    text_width3 = pdfmetrics.stringWidth(text3, font_regular, 9)
-
+    # Вычисляем ширину текста для каждого элемента
+    text_width1 = pdfmetrics.stringWidth(text1, STAMP_FONT_BOLD, STAMP_FONT_SIZE_BOLD)
+    text_width2 = pdfmetrics.stringWidth(text2, STAMP_FONT_REGULAR, STAMP_FONT_SIZE_REGULAR)
+    text_width3 = pdfmetrics.stringWidth(text3, STAMP_FONT_REGULAR, STAMP_FONT_SIZE_REGULAR)
     max_text_width = max(text_width1, text_width2, text_width3)
 
-    padding = 10
+    # Вычисляем размеры и позицию штампа
+    width = max_text_width + 2 * STAMP_PADDING
     height = 60
-    width = max_text_width + 2 * padding
-
     x = (page_width - width) / 2
-    y = 40
+    y = 30
 
+    # Рисуем рамку штампа
     can.setStrokeColorRGB(0, 0, 0)
     can.setLineWidth(1)
     can.rect(x, y, width, height, stroke=1, fill=0)
 
-    can.setFont(font_bold, 10)
-    can.drawString(x + padding, y + height - 15, text1)
+    # Добавляем текст в штамп
+    can.setFont(STAMP_FONT_BOLD, STAMP_FONT_SIZE_BOLD)
+    can.drawString(x + STAMP_PADDING, y + height - 15, text1)
 
-    can.setFont(font_regular, 9)
-    can.drawString(x + padding, y + height - 30, text2)
-    can.drawString(x + padding, y + height - 45, text3)
+    can.setFont(STAMP_FONT_REGULAR, STAMP_FONT_SIZE_REGULAR)
+    can.drawString(x + STAMP_PADDING, y + height - 30, text2)
+    can.drawString(x + STAMP_PADDING, y + height - 45, text3)
 
     can.save()
     packet.seek(0)
     return PdfReader(packet)
 
+
+def get_bottom_margin(input_pdf: Union[str, io.BytesIO, bytes]) -> float:
+    """
+    Определяет расстояние от нижнего края последней страницы до последнего текстового элемента.
+
+    :param input_pdf: Путь к файлу PDF, объект BytesIO или байтовая строка, содержащая PDF
+    :return: Расстояние от нижнего края до последнего текстового элемента в пунктах
+    """
+    try:
+        # Подготавливаем входные данные
+        if isinstance(input_pdf, str):
+            pdf_file = input_pdf
+        elif isinstance(input_pdf, io.BytesIO):
+            pdf_file = input_pdf
+        elif isinstance(input_pdf, bytes):
+            pdf_file = io.BytesIO(input_pdf)
+        else:
+            raise ValueError("Неподдерживаемый тип входных данных")
+
+        # Извлекаем страницы из PDF
+        pages = list(extract_pages(pdf_file))
+
+        if not pages:
+            logger.error("PDF документ не содержит страниц")
+            return 0
+
+        # Получаем последнюю страницу
+        last_page = pages[-1]
+
+        # Находим текстовые элементы на странице
+        text_elements = [element for element in last_page if isinstance(element, LTTextBox)]
+
+        if not text_elements:
+            logger.warning("На последней странице не найдено текстовых элементов")
+            return last_page.height
+
+        # Находим самый нижний текстовый элемент
+        bottom_most_element = min(text_elements, key=lambda e: e.y0)
+
+        # Вычисляем расстояние от нижнего края страницы до нижнего края текстового элемента
+        bottom_margin = bottom_most_element.y0
+
+        return bottom_margin
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении нижнего отступа: {str(e)}")
+        return 0
+
+
 def add_signature_stamp(input_pdf, output_pdf, signer_name):
-    register_fonts()
+    try:
+        existing_pdf = PdfReader(input_pdf)
+        if len(existing_pdf.pages) == 0:
+            raise ValueError("PDF документ не содержит страниц")
 
-    existing_pdf = PdfReader(input_pdf)
-    last_page = existing_pdf.pages[-1]
-    page_width = float(last_page.MediaBox[2])
+        last_page = existing_pdf.pages[-1]
+        if '/MediaBox' not in last_page:
+            raise ValueError("Невозможно получить размеры страницы")
 
-    stamp_pdf = create_stamp_pdf(signer_name, page_width)
+        page_width = float(last_page['/MediaBox'][2])  # Извлекаем ширину страницы
+        page_height = float(last_page['/MediaBox'][3])  # Извлекаем высоту страницы
 
-    output = PdfWriter()
+        stamp_pdf = create_stamp_pdf(signer_name, page_width, page_height)
+        bottom_margin = get_bottom_margin(input_pdf)
 
-    for i, page in enumerate(existing_pdf.pages):
-        if i == len(existing_pdf.pages) - 1:
-            merger = PageMerge(page)
-            merger.add(stamp_pdf.pages[0], prepend=False).render()
-        output.addpage(page)
+        output = PdfWriter()
 
-    output.write(output_pdf)
+        for i, page in enumerate(existing_pdf.pages):
+            if i == len(existing_pdf.pages) - 1:
+                if bottom_margin < STAMP_HEIGHT:
+                    # Создаем пустую страницу в pdfrw
+                    new_page = PageMerge()
+                    new_page.mbox = [0, 0, page_width, page_height]
+                    new_page_obj = new_page.render()
+
+                    # Добавляем штамп на новую пустую страницу
+                    merger = PageMerge(new_page_obj)  # Инициализируем merger с новой страницей
+                    stamp_y = page_height - STAMP_HEIGHT - 10
+
+                    # Изменяем y координату штампа
+                    stamp_page = stamp_pdf.pages[0]
+                    stamp_page.y = stamp_y
+
+                    merger.add(stamp_page).render()
+
+                    output.addpage(page)  # Добавляем исходную последнюю страницу
+                    output.addpage(new_page_obj)  # Добавляем новую страницу со штампом
+                else:
+                    # Добавляем штамп на последнюю страницу
+                    merger = PageMerge(page)  # Инициализируем merger с последней страницей
+                    stamp_y = page_height - STAMP_HEIGHT - 10 - bottom_margin
+
+                    # Изменяем y координату штампа
+                    stamp_page = stamp_pdf.pages[0]
+                    stamp_page.y = stamp_y
+
+                    merger.add(stamp_page).render()
+                    output.addpage(merger.render())  # Добавляем последнюю страницу со штампом
+            else:
+                output.addpage(page)
+
+        output.write(output_pdf)  # Записываем результат в output_pdf (BytesIO)
+        output_pdf.seek(0)  # Перемещаем указатель в начало потока
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении штампа подписи: {str(e)}")
+        raise

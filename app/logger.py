@@ -1,23 +1,30 @@
 # logger.py
 import logging
 
-def get_logger(name):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)  # Изменено на INFO
+from config import LOG_FILE_PATH
 
-    # Формат сообщений
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Создаем логгер
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-    # Обработчик для файла
-    file_handler = logging.FileHandler('app.log')
-    file_handler.setLevel(logging.ERROR)  # Записывать только ошибки в файл
-    file_handler.setFormatter(formatter)
+# Формат сообщений
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Обработчик для файла
+file_handler = logging.FileHandler(LOG_FILE_PATH)
+# file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+
+# Обработчик для консоли
+console_handler = logging.StreamHandler()
+# console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+# Добавляем обработчики к логгеру, если их еще нет
+if not logger.handlers:
     logger.addHandler(file_handler)
-
-    # Обработчик для консоли
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    return logger
+
+def get_logger(name):
+    return logging.getLogger(name)

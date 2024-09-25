@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import xml.etree.ElementTree as ET
 from io import BytesIO
 import logging
@@ -19,18 +19,32 @@ logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 logging.getLogger('PIL').setLevel(logging.WARNING)
 
+# Московский часовой пояс
+MOSCOW_TZ = timezone(timedelta(hours=3))
 
-def find_value_in_xml(element, target_name):
+
+def find_values_in_xml(element, target_name, multiple=False):
+    """
+    Находит значения в XML, используя XPath.
+
+    Args:
+        element (ET.Element): XML-элемент, в котором нужно искать.
+        target_name (str): Имя тега, значения которого нужно найти.
+        multiple (bool): Если True, возвращает список значений.
+                         Если False, возвращает первое найденное значение.
+
+    Returns:
+        str/list: Найденное значение или список значений.
+    """
     try:
-        if element.tag == target_name and element.text:
-            return element.text.strip()
-        for child in element:
-            result = find_value_in_xml(child, target_name)
-            if result is not None:
-                return result
+        values = element.findall(f".//{target_name}")
+        if multiple:
+            return [value.text.strip() for value in values if value.text]
+        elif values:
+            return values[0].text.strip()
     except AttributeError:
-        logger.warning(f"AttributeError in find_value_in_xml for target: {target_name}")
-    return None
+        logger.warning(f"AttributeError in find_values_in_xml for target: {target_name}")
+    return None if not multiple else []
 
 
 def find_multiple_values_in_xml(element, target_name):
@@ -54,8 +68,8 @@ def extract_coordinates_from_xml(element):
             for polygon in plot.findall('.//Polygon'):
                 polygon_coords = []  # Список координат для текущего полигона
                 for point in polygon.findall('.//Point'):
-                    latitude = find_value_in_xml(point, 'Latitude')
-                    longitude = find_value_in_xml(point, 'Longitude')
+                    latitude = find_values_in_xml(point, 'Latitude')
+                    longitude = find_values_in_xml(point, 'Longitude')
                     if latitude and longitude:
                         polygon_coords.append(f"{latitude}, {longitude}")
                 plot_coords.append(polygon_coords)  # Добавляем список координат полигона в список участка
@@ -70,14 +84,22 @@ def extract_coordinates_from_xml(element):
 
 def extract_deposit_info_from_xml(root):
     deposits = []
-    formatted_datetime = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    formatted_datetime = datetime.now(MOSCOW_TZ).strftime("%d.%m.%Y %H:%M:%S")
     try:
         for deposit in root.findall('.//DepositInfo'):
-            last_change_date = find_value_in_xml(deposit, 'last_change_date')
+            last_change_date_str = find_values_in_xml(deposit, 'last_change_date')
+
+            if last_change_date_str:
+                try:
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                except ValueError:
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                last_change_date_str = last_change_date.strftime("%d.%m.%Y %H:%M:%S")
+
             deposit_data = {
-                "name": find_value_in_xml(deposit, 'DepositName'),
-                "licenses": ', '.join(find_multiple_values_in_xml(deposit, 'LicenseNumber')),
-                "last_change_date": last_change_date if last_change_date else formatted_datetime,
+                "name": find_values_in_xml(deposit, 'DepositName'),
+                "licenses": ', '.join(find_values_in_xml(deposit, 'LicenseNumber', multiple=True)),
+                "last_change_date": last_change_date_str if last_change_date_str else formatted_datetime,
             }
             deposits.append(deposit_data)
     except AttributeError:
@@ -105,22 +127,28 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
         logger.info("Starting XML to PDF conversion")
         root = ET.fromstring(xml_content)
 
-        deposit_presence = find_value_in_xml(root, 'DepositPresence')
+        deposit_presence = find_values_in_xml(root, 'DepositPresence')
+        request_datetime = find_values_in_xml(root, 'RequestDateTime')
+
+        date_object = datetime.strptime(request_datetime.split(".")[0], "%Y-%m-%dT%H:%M:%S").replace(
+            tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+
+        formatted_date = date_object.strftime("%Y-%m-%d %H:%M:%S") # Удалена дублирующая строка
 
         context = {
-            "name": find_value_in_xml(root, 'FullName'),
-            "last_name": find_value_in_xml(root, 'LastName'),
-            "first_name": find_value_in_xml(root, 'FirstName'),
-            "middle_name": find_value_in_xml(root, 'MiddleName'),
-            "inn": find_value_in_xml(root, 'INN'),
-            "snils": find_value_in_xml(root, 'RepresentativeSNILS'),
-            "tel": find_value_in_xml(root, 'Phone'),
-            "email": find_value_in_xml(root, 'Email'),
-            "date": find_value_in_xml(root, 'RequestDate'),
-            "inv": find_value_in_xml(root, 'UniqueID'),
+            "name": find_values_in_xml(root, 'FullName'),
+            "last_name": find_values_in_xml(root, 'LastName'),
+            "first_name": find_values_in_xml(root, 'FirstName'),
+            "middle_name": find_values_in_xml(root, 'MiddleName'),
+            "inn": find_values_in_xml(root, 'INN'),
+            "snils": find_values_in_xml(root, 'RepresentativeSNILS'),
+            "tel": find_values_in_xml(root, 'Phone'),
+            "email": find_values_in_xml(root, 'Email'),
+            "date": formatted_date,
+            "inv": find_values_in_xml(root, 'UniqueID'),
             "coords": extract_coordinates_from_xml(root),
-            "is_deposit": find_value_in_xml(root, 'DepositPresence'),
-            "in_city": find_value_in_xml(root, 'HasAreaInCity'),
+            "is_deposit": find_values_in_xml(root, 'DepositPresence'),
+            "in_city": find_values_in_xml(root, 'HasAreaInCity'),
             "test": TEST_MODE,
             "deposit_info_list": extract_deposit_info_from_xml(root) if deposit_presence and deposit_presence.lower()
                                                                         in ['1', 'true'] else [],
@@ -136,13 +164,11 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
         css = CSS(string='''
             @page {
                 size: A4;
-                margin-top: 5mm;
+                margin-top: 10mm;
                 margin-right: 20mm;
                 margin-bottom: 20mm;
                 margin-left: 10mm;
-            }
-            @page {
-                @bottom-center {
+                @top-right {
                     content: "Страница " counter(page) " из " counter(pages);
                     font-size: 10pt;
                     color: gray;
@@ -169,6 +195,7 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
 
         logger.info("PDF conversion and signing completed successfully")
         return BytesIO(signed_pdf_content)  # Возвращаем буфер с подписанными данными
+
 
     except ET.ParseError as e:
         logger.error(f"Error parsing XML: {e}")
