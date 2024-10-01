@@ -21,3 +21,7 @@ STORAGE_PATH = os.path.join(STORAGE_DIR, "input_data")  # Папка для вх
 OUTPUT_PATH = os.path.join(STORAGE_DIR, "output_data")  # Папка для выходных PDF файлов
 FILE_ERRORS_PATH = os.path.join(STORAGE_DIR, "file_errors.json")  # Путь к файлу для хранения ошибок
 LOG_FILE_PATH = os.path.join(STORAGE_DIR, "app.log")  # Путь к лог-файлу
+F_DATE = "%d.%m.%Y %H:%M:%S (UTC+3)"
+
+# Количество строк в списке файлоа
+PAGES = 15

@@ -13,11 +13,13 @@ from pyhanko.sign import signers, PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.signers.pdf_signer import PdfSigner
 from pdfrw import PdfReader, PdfWriter, PageMerge
+from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 import tempfile
 
+from config import F_DATE, OUTPUT_PATH
 from logger import get_logger
 
 # Настройка логирования
@@ -120,11 +122,11 @@ def create_stamp_pdf(signer_name: str, page_width: float, page_height: float) ->
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=(page_width, page_height))
 
-    current_time = datetime.now(MOSCOW_TZ).strftime('%d.%m.%Y %H:%M:%S')
+    current_time = datetime.now(MOSCOW_TZ).strftime(F_DATE)
 
     text1 = "Документ подписан электронной подписью"
     text2 = f"Подписант: {signer_name}"
-    text3 = f"Дата и время (МСК): {current_time}"
+    text3 = f"Дата и время: {current_time}"
 
     # Вычисляем ширину текста для каждого элемента
     text_width1 = pdfmetrics.stringWidth(text1, STAMP_FONT_BOLD, STAMP_FONT_SIZE_BOLD)
@@ -234,7 +236,6 @@ def add_signature_stamp(input_pdf, output_pdf, signer_name):
                     merger = PageMerge(new_page_obj)  # Инициализируем merger с новой страницей
                     stamp_y = page_height - STAMP_HEIGHT - 10
 
-                    # Изменяем y координату штампа
                     stamp_page = stamp_pdf.pages[0]
                     stamp_page.y = stamp_y
 
@@ -247,7 +248,6 @@ def add_signature_stamp(input_pdf, output_pdf, signer_name):
                     merger = PageMerge(page)  # Инициализируем merger с последней страницей
                     stamp_y = page_height - STAMP_HEIGHT - 10 - bottom_margin
 
-                    # Изменяем y координату штампа
                     stamp_page = stamp_pdf.pages[0]
                     stamp_page.y = stamp_y
 
@@ -261,3 +261,41 @@ def add_signature_stamp(input_pdf, output_pdf, signer_name):
     except Exception as e:
         logger.error(f"Ошибка при добавлении штампа подписи: {str(e)}")
         raise
+
+def add_page_numbers(pdf_buffer):
+    pdf_reader = PdfReader(pdf_buffer)
+    pdf_writer = PdfWriter()
+
+    for page_num, page in enumerate(pdf_reader.pages):
+        packet = io.BytesIO()
+        can = canvas.Canvas(packet, pagesize=letter)
+        can.setFont("Roboto-Regular", 10)
+        can.drawString(500, 20, f"Страница {page_num + 1} из {len(pdf_reader.pages)}")
+        can.save()
+        packet.seek(0)
+
+        new_pdf = PdfReader(packet)
+        merger = PageMerge(page)
+        merger.add(new_pdf.pages[0]).render()
+        pdf_writer.addpage(page)
+
+    output_buffer = io.BytesIO()
+    pdf_writer.write(output_buffer)
+    output_buffer.seek(0)
+    return output_buffer
+
+# Генерация пустого PDF
+def create_empty_pdf(buffer):
+    c = canvas.Canvas(buffer, pagesize=letter)
+    c.drawString(100, 750, "Error: PDF file not generated due to an error.")
+    c.showPage()
+    c.save()
+
+# Функция для создания пустого PDF и обработки ошибок
+async def create_error_pdf(filename, message):
+    pdf_buffer = BytesIO()
+    create_empty_pdf(pdf_buffer)
+    pdf_filepath = os.path.join(OUTPUT_PATH, filename)
+    with open(pdf_filepath, "wb") as f:
+        f.write(pdf_buffer.getvalue())
+    return pdf_buffer

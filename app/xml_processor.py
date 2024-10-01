@@ -1,3 +1,5 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 import xml.etree.ElementTree as ET
 from io import BytesIO
@@ -7,12 +9,15 @@ import os
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML, CSS
 
-from config import TEST_MODE, SIGNER_NAME, SIGNER_PASSWORD, PFX_FILE
+from config import TEST_MODE, SIGNER_NAME, SIGNER_PASSWORD, PFX_FILE, F_DATE
 from logger import get_logger
-from pdf_utils import add_signature_stamp, sign_pdf
+from pdf_utils import add_signature_stamp, sign_pdf, add_page_numbers
 
 # Настройка логирования
 logger = get_logger(__name__)
+
+# Экзекутор для асинхронных задач
+executor = ThreadPoolExecutor()
 
 # Установка уровня логирования для сторонних библиотек
 logging.getLogger('fontTools').setLevel(logging.WARNING)
@@ -47,23 +52,12 @@ def find_values_in_xml(element, target_name, multiple=False):
     return None if not multiple else []
 
 
-def find_multiple_values_in_xml(element, target_name):
-    results = []
-    try:
-        if element.tag == target_name and element.text:
-            results.append(element.text.strip())
-        for child in element:
-            results.extend(find_multiple_values_in_xml(child, target_name))
-    except AttributeError:
-        logger.warning(f"AttributeError in find_multiple_values_in_xml for target: {target_name}")
-    return results
-
-
 def extract_coordinates_from_xml(element):
     coordinates = []
     try:
         for plot in element.findall('.//Plot'):
             plot_number = plot.get('Number', '')
+            plot_name = plot.get('Name', '')
             plot_coords = []
             for polygon in plot.findall('.//Polygon'):
                 polygon_coords = []  # Список координат для текущего полигона
@@ -75,6 +69,7 @@ def extract_coordinates_from_xml(element):
                 plot_coords.append(polygon_coords)  # Добавляем список координат полигона в список участка
             coordinates.append({
                 "number": plot_number,
+                "name": plot_name,
                 "coords": plot_coords
             })
     except AttributeError:
@@ -84,17 +79,19 @@ def extract_coordinates_from_xml(element):
 
 def extract_deposit_info_from_xml(root):
     deposits = []
-    formatted_datetime = datetime.now(MOSCOW_TZ).strftime("%d.%m.%Y %H:%M:%S")
+    formatted_datetime = datetime.now(MOSCOW_TZ).strftime(F_DATE)
     try:
         for deposit in root.findall('.//DepositInfo'):
             last_change_date_str = find_values_in_xml(deposit, 'last_change_date')
 
             if last_change_date_str:
                 try:
-                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S.%f").replace(
+                        tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
                 except ValueError:
-                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
-                last_change_date_str = last_change_date.strftime("%d.%m.%Y %H:%M:%S")
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S").replace(
+                        tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                last_change_date_str = last_change_date.strftime(F_DATE)
 
             deposit_data = {
                 "name": find_values_in_xml(deposit, 'DepositName'),
@@ -130,11 +127,12 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
         deposit_presence = find_values_in_xml(root, 'DepositPresence')
         request_datetime = find_values_in_xml(root, 'RequestDateTime')
 
+        # Парсим и форматируем дату
         date_object = datetime.strptime(request_datetime.split(".")[0], "%Y-%m-%dT%H:%M:%S").replace(
             tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+        formatted_date = date_object.strftime(F_DATE)
 
-        formatted_date = date_object.strftime("%Y-%m-%d %H:%M:%S") # Удалена дублирующая строка
-
+        # Формирование контекста для шаблона
         context = {
             "name": find_values_in_xml(root, 'FullName'),
             "last_name": find_values_in_xml(root, 'LastName'),
@@ -156,45 +154,56 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
 
         context['is_10'] = 1 if len(context.get('deposit_info_list', [])) == 10 else 0
 
+        # Генерация HTML из шаблона
         html_content = render_template("template2.html", context, project_path)
 
         logger.info("Generating PDF from HTML")
         pdf_buffer = BytesIO()
         html = HTML(string=html_content, base_url=project_path)
-        css = CSS(string='''
+        css = CSS(string=''' 
             @page {
                 size: A4;
                 margin-top: 10mm;
                 margin-right: 20mm;
                 margin-bottom: 20mm;
                 margin-left: 10mm;
-                @top-right {
-                    content: "Страница " counter(page) " из " counter(pages);
-                    font-size: 10pt;
-                    color: gray;
-                }
             }
         ''')
 
-        html.write_pdf(pdf_buffer, stylesheets=[css])
+        # Асинхронная генерация PDF
+        await asyncio.get_event_loop().run_in_executor(
+            executor, lambda: html.write_pdf(pdf_buffer, stylesheets=[css])
+        )
         pdf_buffer.seek(0)
 
         logger.info("Adding signature stamp")
         stamped_pdf_buffer = BytesIO()
-        add_signature_stamp(pdf_buffer, stamped_pdf_buffer, SIGNER_NAME)
+
+        # Асинхронное добавление штампа
+        await asyncio.get_event_loop().run_in_executor(
+            executor, lambda: add_signature_stamp(pdf_buffer, stamped_pdf_buffer, SIGNER_NAME)
+        )
         stamped_pdf_buffer.seek(0)
+
+        logger.info("Adding page numbers")
+        # Асинхронное добавление номеров страниц
+        numbered_pdf_buffer = await asyncio.get_event_loop().run_in_executor(
+            executor, lambda: add_page_numbers(stamped_pdf_buffer)
+        )
 
         logger.info("Signing PDF")
         signed_pdf_buffer = BytesIO()
         pfx_path = os.path.join(project_path, 'certs', PFX_FILE)
-        await sign_pdf(stamped_pdf_buffer, signed_pdf_buffer, pfx_path, SIGNER_NAME, SIGNER_PASSWORD, test=TEST_MODE)
+
+        # Подпись PDF
+        await sign_pdf(numbered_pdf_buffer, signed_pdf_buffer, pfx_path, SIGNER_NAME, SIGNER_PASSWORD, test=TEST_MODE)
 
         # Ожидание завершения подписания
-        signed_pdf_buffer.seek(0)  # Перемещаем указатель в начало буфера
         signed_pdf_content = signed_pdf_buffer.read()  # Читаем данные из буфера
 
         logger.info("PDF conversion and signing completed successfully")
         return BytesIO(signed_pdf_content)  # Возвращаем буфер с подписанными данными
+
 
 
     except ET.ParseError as e:

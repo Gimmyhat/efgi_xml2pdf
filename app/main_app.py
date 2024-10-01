@@ -5,18 +5,20 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import traceback
 from functools import wraps
 from io import BytesIO
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response, Query
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response, Query, status
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import STORAGE_PATH, OUTPUT_PATH, FILE_ERRORS_PATH, LOG_FILE_PATH
+from config import STORAGE_PATH, OUTPUT_PATH, FILE_ERRORS_PATH, LOG_FILE_PATH, PAGES
 from logger import get_logger
+from pdf_utils import create_error_pdf
 from xml_processor import convert_xml_to_pdf, find_values_in_xml
 import secrets
 import xml.etree.ElementTree as ET
@@ -43,6 +45,9 @@ try:
     with open(FILE_ERRORS_PATH, "r") as f:
         file_errors = json.load(f)
 except FileNotFoundError:
+    # Если файл не найден, создаем его и инициализируем пустым словарем
+    with open(FILE_ERRORS_PATH, "w") as f:
+        json.dump({}, f)  # Сохраняем пустой словарь в файл
     file_errors = {}
 
 # Настройка базовой HTTP-аутентификации
@@ -127,69 +132,129 @@ async def upload_file_or_xml(
         file: UploadFile = File(None),
 ):
     try:
+        # Проверка на пустой файл или отсутствие XML-данных
+        if file is None and request.headers.get("Content-Type") != "application/xml":
+            return HTMLResponse(content="No file selected or XML data provided. Please try again.", status_code=400)
+
+        if file is not None:
+            # Проверка на пустой файл
+            file_content = await file.read()
+            if len(file_content) == 0:
+                return HTMLResponse(content="Empty file uploaded. Please select a valid file.", status_code=400)
+            await file.seek(0)  # Сбрасываем позицию чтения файла в начало
+            original_filename = file.filename
+        elif request.headers.get("Content-Type") == "application/xml":
+            # Проверка на пустые XML-данные
+            xml_content = await request.body()
+            if len(xml_content) == 0:
+                return HTMLResponse(content="Empty XML data provided. Please provide valid XML.", status_code=400)
+            original_filename = "uploaded_xml.xml"
+        else:
+            return HTMLResponse(content="Invalid request. Please provide a file or XML data.", status_code=400)
+
         project_path = os.path.dirname(os.path.abspath(__file__))
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
-        unique_filename = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        # Формируем имя файла, сохраняя оригинальное имя в начале
+        file_extension = os.path.splitext(original_filename)[1]
+        base_filename = f"{os.path.splitext(original_filename)[0]}_{timestamp}"
 
-        # Определяем расширение файла
-        file_extension = '.xml'  # Расширение по умолчанию
+        # Обработка файла, если он загружен
         if file:
-            file_extension = os.path.splitext(file.filename)[1]
-
-        if file:
-            file_path = os.path.join(STORAGE_PATH, f"{unique_filename}{file_extension}")
+            file_path = os.path.join(STORAGE_PATH, f"{base_filename}{file_extension}")
             with open(file_path, "wb") as f:
-                file_content = await file.read()
                 f.write(file_content)
             xml_content = file_content
-        elif request.headers.get("Content-Type") == "application/xml":
-            file_path = os.path.join(STORAGE_PATH,
-                                     f"{unique_filename}{file_extension}")
-            with open(file_path, "wb") as f:
-                xml_content = await request.body()
-                f.write(xml_content)
+        # Обработка XML, если он передан в теле запроса
         else:
-            raise HTTPException(status_code=400, detail="No file or XML data provided")
-
-        # Извлекаем UniqueID из XML
-        unique_id = find_values_in_xml(ET.fromstring(xml_content), 'UniqueID')
-        if not unique_id:
-            handle_error(os.path.basename(file_path), "UniqueID not found in XML")
-            raise HTTPException(status_code=400, detail="UniqueID not found in XML")
-
-        # Переименовываем файл, добавляя UniqueID
-        new_file_path = os.path.join(STORAGE_PATH, f"{unique_filename}_{unique_id}{file_extension}")
-        os.rename(file_path, new_file_path)
-        logger.info(f"Saved input data to: {new_file_path}")
+            file_path = os.path.join(STORAGE_PATH, f"{base_filename}{file_extension}")
+            with open(file_path, "wb") as f:
+                f.write(xml_content)
 
         try:
-            pdf_buffer = await convert_xml_to_pdf(xml_content.decode("utf-8"), project_path)
-        except ValueError as e:
-            handle_error(new_file_path, str(e))
-            raise HTTPException(status_code=400, detail=str(e))
+            # Попытка парсинга XML
+            root = ET.fromstring(xml_content)
+        except ET.ParseError as parse_error:
+            error_message = f"Error parsing XML from {original_filename}: {str(parse_error)}"
+            logger.error(error_message)
+            handle_error(f"{base_filename}{file_extension}", "Invalid XML format")
 
-        # Сохраняем подписанный PDF
-        pdf_filename = f"{unique_filename}_{unique_id}_signed.pdf"
+            # Создание PDF с ошибкой
+            pdf_filename = f"{base_filename}_error.pdf"
+            pdf_buffer = await create_error_pdf(pdf_filename, "Invalid XML format")
+            pdf_filepath = os.path.join(OUTPUT_PATH, pdf_filename)
+            with open(pdf_filepath, "wb") as f:
+                f.write(pdf_buffer.getvalue())
+
+            # Возврат PDF с ошибкой
+            pdf_buffer.seek(0)
+            return StreamingResponse(
+                pdf_buffer,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"inline; filename={pdf_filename}"}
+            )
+
+            # Извлечение UniqueID и дальнейшая обработка
+        unique_id = find_values_in_xml(root, 'UniqueID')
+        if not unique_id:
+            error_message = f"UniqueID not found in XML file: {original_filename}"
+            logger.error(error_message)
+            handle_error(f"{base_filename}{file_extension}", "UniqueID not found in XML")
+
+            # Создание PDF с ошибкой
+            pdf_filename = f"{base_filename}_error.pdf"
+            pdf_buffer = await create_error_pdf(pdf_filename, "UniqueID not found in XML")
+            pdf_filepath = os.path.join(OUTPUT_PATH, pdf_filename)
+            with open(pdf_filepath, "wb") as f:
+                f.write(pdf_buffer.getvalue())
+
+            # Возврат PDF с ошибкой
+            pdf_buffer.seek(0)
+            return StreamingResponse(
+                pdf_buffer,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"inline; filename={pdf_filename}"}
+            )
+
+        # Переименование файла с добавлением UniqueID
+        new_file_path = os.path.join(STORAGE_PATH, f"{base_filename}_{unique_id}{file_extension}")
+        os.rename(file_path, new_file_path)
+        logger.info(f"Saved input data from {original_filename} to: {new_file_path}")
+
+        # Генерация PDF
+        pdf_buffer = await convert_xml_to_pdf(xml_content.decode("utf-8"), project_path)
+        pdf_filename = f"{base_filename}_{unique_id}_signed.pdf"
         pdf_filepath = os.path.join(OUTPUT_PATH, pdf_filename)
         with open(pdf_filepath, "wb") as f:
             f.write(pdf_buffer.read())
 
-        # Возвращаем подписанный PDF для отображения в браузере
+        # Возврат PDF в браузере
         pdf_buffer.seek(0)
         return StreamingResponse(
             BytesIO(pdf_buffer.getvalue()),
             media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename={pdf_filename}"}
         )
-
     except Exception as e:
-        logger.error(f"Error processing input: {traceback.format_exc()}")
-        if 'new_file_path' in locals():
-            handle_error(new_file_path, str(e))
-        else:
-            handle_error(file.filename, str(e))
-        raise HTTPException(status_code=500, detail=f"Error processing input: {str(e)}")
+        error_message = f"Error processing input from {original_filename}: {str(e)}"
+        logger.error(error_message)
+        logger.error(traceback.format_exc())  # Логируем полный стек-трейс
+        handle_error(f"{base_filename}{file_extension}", str(e))
 
+        # Создание PDF с ошибкой
+        pdf_filename = f"{base_filename}_error.pdf"
+        pdf_buffer = await create_error_pdf(pdf_filename, str(e))
+        pdf_filepath = os.path.join(OUTPUT_PATH, pdf_filename)
+        with open(pdf_filepath, "wb") as f:
+            f.write(pdf_buffer.getvalue())
+
+        # Возврат PDF с ошибкой
+        pdf_buffer.seek(0)
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={pdf_filename}"}
+        )
     finally:
         cleanup_temp_files()
 
@@ -199,7 +264,7 @@ async def upload_file_or_xml(
 @require_auth
 async def list_files(request: Request,
                      page: int = Query(1, ge=1),
-                     per_page: int = Query(20, ge=1),
+                     per_page: int = Query(PAGES, ge=1),
                      search: str = Query(None)):
     files = []
     for filename in os.listdir(STORAGE_PATH):
@@ -209,16 +274,24 @@ async def list_files(request: Request,
             error_message = file_errors.get(filename)  # Получаем сообщение об ошибке, если есть
 
             # Извлекаем UniqueID из имени файла с помощью регулярного выражения
-            match = re.search(r'_(.+?)\.xml$', filename)
-            unique_id = match.group(1) if match else None
+            match = re.search(r'_(\d{14})_(.+?)\.xml$', filename)
+            if match:
+                timestamp, unique_id = match.groups()
+            else:
+                unique_id = None
 
             # Проверяем, совпадает ли search с UniqueID, если он найден
             if search and unique_id and search.lower() != unique_id.lower():
                 continue  # Пропускаем файл, если search не совпадает
 
             # Формируем имя PDF файла и URL для просмотра в браузере
-            unique_filename = filename.split('.')[0]  # Получаем имя без расширения
-            pdf_filename = f"{unique_filename}_signed.pdf"
+            base_filename = os.path.splitext(filename)[0]  # Получаем имя без расширения
+
+            if error_message is None:
+                pdf_filename = f"{base_filename}_signed.pdf" if unique_id else f"{base_filename}.pdf"
+            else:
+                pdf_filename = f"{base_filename}_error.pdf"
+
             pdf_url = f"/output/{pdf_filename}?view=inline"  # URL для просмотра PDF
 
             files.append({
@@ -246,18 +319,32 @@ async def list_files(request: Request,
         "page": page,
         "per_page": per_page,
         "total_pages": total_pages,
-        "total_files": total_files
+        "total_files": total_files,
+        "max": max,
+        "min": min,
+        "range": range
     })
 
 
 # Функция для обработки ошибок
 def handle_error(filename, error_message):
     file_errors[filename] = error_message
-    logger.error(f"Error processing file {filename}: {error_message}")
 
-    # Сохранение ошибок в файл
-    with open(FILE_ERRORS_PATH, "w") as f:
-        json.dump(file_errors, f)
+    max_retries = 3
+    retry_delay = 2  # Задержка между попытками записи (в секундах)
+
+    for attempt in range(max_retries):
+        try:
+            # Сохранение ошибок в файл
+            with open(FILE_ERRORS_PATH, "w") as f:
+                json.dump(file_errors, f)
+            break  # Выходим из цикла, если запись успешна
+        except Exception as e:
+            if attempt + 1 == max_retries:
+                # Если после нескольких попыток ошибка не записана, уведомляем об этом
+                logger.critical(f"Failed to save error log after {max_retries} attempts: {e}")
+            else:
+                time.sleep(retry_delay)  # Ждем перед новой попыткой
 
 
 @app.get("/error/{filename}", response_class=HTMLResponse)
@@ -305,17 +392,53 @@ async def view_file(request: Request, filename: str):
 async def view_logs(request: Request):
     """Отображает содержимое лог-файла."""
     try:
-        # Если лог-файл не существует, создаем его
-        if not os.path.exists(LOG_FILE_PATH):
-            with open(LOG_FILE_PATH, "w") as f:
-                pass  # Просто создаем пустой файл
-
         with open(LOG_FILE_PATH, "r") as f:
             log_content = f.read()
         return templates.TemplateResponse("logs.html", {"request": request, "log_content": log_content})
     except Exception as e:
         logger.error(f"Error reading log file: {str(e)}")
         raise HTTPException(status_code=500, detail="Error reading log file")
+
+
+@app.post("/logs/clear")
+@require_auth
+async def clear_logs(request: Request):
+    """Очищает содержимое лог-файла."""
+    try:
+        # Очищаем файл логов
+        with open(LOG_FILE_PATH, "w") as f:
+            f.write("")  # Пишем пустую строку, тем самым очищаем файл
+
+        logger.info("Log file cleared successfully.")
+
+        # Перенаправляем обратно на страницу логов
+        return RedirectResponse(url="/logs/", status_code=status.HTTP_303_SEE_OTHER)
+    except Exception as e:
+        logger.error(f"Error clearing log file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error clearing log file")
+
+
+@app.post("/files/clear")
+@require_auth
+async def clear_files(request: Request):
+    """Очищает содержимое директорий STORAGE_PATH, OUTPUT_PATH и файл FILE_ERRORS_PATH."""
+    try:
+        for path in [STORAGE_PATH, OUTPUT_PATH]:
+            for filename in os.listdir(path):
+                file_path = os.path.join(path, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)  # Удаляем файл
+
+        if os.path.exists(FILE_ERRORS_PATH):
+            os.remove(FILE_ERRORS_PATH)  # Удаляем файл ошибок
+
+        logger.info("All files and error log cleared successfully.")
+
+        # Перенаправляем обратно на страницу со списком файлов
+        return RedirectResponse(url="/files/", status_code=status.HTTP_303_SEE_OTHER)
+    except Exception as e:
+        logger.error(f"Error clearing files: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error clearing files")
 
 
 # Middleware для логирования запросов и ответов
