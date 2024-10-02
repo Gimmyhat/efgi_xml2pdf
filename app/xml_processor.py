@@ -78,34 +78,46 @@ def extract_coordinates_from_xml(element):
 
 
 def extract_deposit_info_from_xml(root):
-    deposits = []
+    """
+    Извлекает информацию о месторождениях из XML, разделяя их на ОПИ и не-ОПИ.
+    Args:
+        root (ET.Element): Корневой элемент XML.
+    Returns:
+        tuple: Два списка - opi_deposits (месторождения ОПИ) и non_opi_deposits (остальные месторождения).
+    """
+    opi_deposits = []  # Список для месторождений ОПИ
+    non_opi_deposits = []  # Список для остальных месторождений
     formatted_datetime = datetime.now(MOSCOW_TZ).strftime(F_DATE)
     try:
         for deposit in root.findall('.//DepositInfo'):
             last_change_date_str = find_values_in_xml(deposit, 'last_change_date')
 
+            # Парсим и форматируем дату последнего изменения
             if last_change_date_str:
                 try:
-                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S.%f").replace(
-                        tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
                 except ValueError:
-                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S").replace(
-                        tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
+                    last_change_date = datetime.strptime(last_change_date_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone(MOSCOW_TZ)
                 last_change_date_str = last_change_date.strftime(F_DATE)
 
-            deposit_data = {
+
+            deposit_data = { # Формируем словарь с данными о месторождении
                 "name": find_values_in_xml(deposit, 'DepositName'),
                 "licenses": ', '.join(find_values_in_xml(deposit, 'LicenseNumber', multiple=True)),
                 "last_change_date": last_change_date_str if last_change_date_str else formatted_datetime,
+                "is_opi": find_values_in_xml(deposit, 'isOPI'),
             }
-            deposits.append(deposit_data)
+
+            # Разделяем месторождения на ОПИ и не-ОПИ
+            if deposit_data["is_opi"] == "1":
+                opi_deposits.append(deposit_data)
+            else:
+                non_opi_deposits.append(deposit_data)
+
     except AttributeError:
-        logger.warning("AttributeError in extract_deposit_info_from_xml")
+        logger.warning("AttributeError в extract_deposit_info_from_xml")
 
-    if not deposits:
-        logger.info("No deposit information found in XML")
-
-    return deposits
+    return opi_deposits, non_opi_deposits
 
 
 def render_template(template_name, context, project_path):
@@ -124,8 +136,9 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
         logger.info("Starting XML to PDF conversion")
         root = ET.fromstring(xml_content)
 
-        deposit_presence = find_values_in_xml(root, 'DepositPresence')
         request_datetime = find_values_in_xml(root, 'RequestDateTime')
+        opi_deposits, non_opi_deposits = extract_deposit_info_from_xml(root)
+
 
         # Парсим и форматируем дату
         date_object = datetime.strptime(request_datetime.split(".")[0], "%Y-%m-%dT%H:%M:%S").replace(
@@ -148,8 +161,10 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
             "is_deposit": find_values_in_xml(root, 'DepositPresence'),
             "in_city": find_values_in_xml(root, 'HasAreaInCity'),
             "test": TEST_MODE,
-            "deposit_info_list": extract_deposit_info_from_xml(root) if deposit_presence and deposit_presence.lower()
-                                                                        in ['1', 'true'] else [],
+            "opi_deposits": opi_deposits,
+            "non_opi_deposits": non_opi_deposits,
+            "has_opi_deposits": bool(opi_deposits), # Флаг наличия месторождений ОПИ
+            "has_non_opi_deposits": bool(non_opi_deposits), # Флаг наличия других месторождений
         }
 
         context['is_10'] = 1 if len(context.get('deposit_info_list', [])) == 10 else 0

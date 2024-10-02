@@ -175,7 +175,7 @@ async def upload_file_or_xml(
             # Попытка парсинга XML
             root = ET.fromstring(xml_content)
         except ET.ParseError as parse_error:
-            error_message = f"Error parsing XML from {original_filename}: {str(parse_error)}"
+            error_message = f"Error parsing XML from {base_filename}{file_extension}: {str(parse_error)}"
             logger.error(error_message)
             handle_error(f"{base_filename}{file_extension}", "Invalid XML format")
 
