@@ -14,6 +14,7 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.signers.pdf_signer import PdfSigner
 from pdfrw import PdfReader, PdfWriter, PageMerge
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
@@ -212,77 +213,92 @@ def add_signature_stamp(input_pdf, output_pdf, signer_name):
         if len(existing_pdf.pages) == 0:
             raise ValueError("PDF документ не содержит страниц")
 
-        last_page = existing_pdf.pages[-1]
-        if '/MediaBox' not in last_page:
+        # Получаем размеры первой страницы для создания штампа
+        first_page = existing_pdf.pages[0]
+        if '/MediaBox' not in first_page:
             raise ValueError("Невозможно получить размеры страницы")
 
-        page_width = float(last_page['/MediaBox'][2])  # Извлекаем ширину страницы
-        page_height = float(last_page['/MediaBox'][3])  # Извлекаем высоту страницы
+        page_width = float(first_page['/MediaBox'][2])
+        page_height = float(first_page['/MediaBox'][3])
 
+        # Создаем штамп один раз, который будем использовать для всех страниц
         stamp_pdf = create_stamp_pdf(signer_name, page_width, page_height)
-        bottom_margin = get_bottom_margin(input_pdf)
 
         output = PdfWriter()
 
-        for i, page in enumerate(existing_pdf.pages):
-            if i == len(existing_pdf.pages) - 1:
-                if bottom_margin < STAMP_HEIGHT:
-                    # Создаем пустую страницу в pdfrw
-                    new_page = PageMerge()
-                    new_page.mbox = [0, 0, page_width, page_height]
-                    new_page_obj = new_page.render()
+        # Обрабатываем каждую страницу
+        for page in existing_pdf.pages:
+            # Получаем отступ для текущей страницы
+            page_buffer = BytesIO()
+            temp_writer = PdfWriter()
+            temp_writer.addpage(page)
+            temp_writer.write(page_buffer)
+            page_buffer.seek(0)
+            bottom_margin = get_bottom_margin(page_buffer)
 
-                    # Добавляем штамп на новую пустую страницу
-                    merger = PageMerge(new_page_obj)  # Инициализируем merger с новой страницей
-                    stamp_y = page_height - STAMP_HEIGHT - 10
+            # Добавляем штамп на страницу
+            merger = PageMerge(page)
 
-                    stamp_page = stamp_pdf.pages[0]
-                    stamp_page.y = stamp_y
-
-                    merger.add(stamp_page).render()
-
-                    output.addpage(page)  # Добавляем исходную последнюю страницу
-                    output.addpage(new_page_obj)  # Добавляем новую страницу со штампом
-                else:
-                    # Добавляем штамп на последнюю страницу
-                    merger = PageMerge(page)  # Инициализируем merger с последней страницей
-                    stamp_y = page_height - STAMP_HEIGHT - 10 - bottom_margin
-
-                    stamp_page = stamp_pdf.pages[0]
-                    stamp_page.y = stamp_y
-
-                    merger.add(stamp_page).render()
-                    output.addpage(merger.render())  # Добавляем последнюю страницу со штампом
+            # Вычисляем позицию штампа
+            if bottom_margin < STAMP_HEIGHT:
+                # Если места недостаточно, размещаем штамп выше текста
+                stamp_y = page_height - STAMP_HEIGHT - 10
             else:
-                output.addpage(page)
+                # Если места достаточно, размещаем штамп с учетом отступа
+                stamp_y = page_height - STAMP_HEIGHT - 10 - bottom_margin
 
-        output.write(output_pdf)  # Записываем результат в output_pdf (BytesIO)
-        output_pdf.seek(0)  # Перемещаем указатель в начало потока
+            stamp_page = stamp_pdf.pages[0]
+            stamp_page.y = stamp_y
+
+            # Добавляем штамп и сохраняем страницу
+            merger.add(stamp_page).render()
+            output.addpage(merger.render())
+
+        output.write(output_pdf)
+        output_pdf.seek(0)
     except Exception as e:
-        logger.error(f"Ошибка при добавлении штампа подписи: {str(e)}")
+        logger.error(f"Ошибка при добавлении штампов подписи: {str(e)}")
         raise
 
+FONT_PATH = os.path.join('static', 'fonts', 'Roboto-Regular.ttf')
+
 def add_page_numbers(pdf_buffer):
-    pdf_reader = PdfReader(pdf_buffer)
-    pdf_writer = PdfWriter()
+    try:
+        original_pdf = PdfReader(pdf_buffer)
+        writer = PdfWriter()
 
-    for page_num, page in enumerate(pdf_reader.pages):
-        packet = io.BytesIO()
-        can = canvas.Canvas(packet, pagesize=letter)
-        can.setFont("Roboto-Regular", 10)
-        can.drawString(500, 20, f"Страница {page_num + 1} из {len(pdf_reader.pages)}")
-        can.save()
-        packet.seek(0)
+        try:
+            pdfmetrics.registerFont(TTFont("Roboto-Regular", FONT_PATH))
+        except Exception as e:
+            logger.error(f"Ошибка регистрации шрифта: {e}")
+            # Обработка, например, fallback на стандартный шрифт
 
-        new_pdf = PdfReader(packet)
-        merger = PageMerge(page)
-        merger.add(new_pdf.pages[0]).render()
-        pdf_writer.addpage(page)
 
-    output_buffer = io.BytesIO()
-    pdf_writer.write(output_buffer)
-    output_buffer.seek(0)
-    return output_buffer
+        for page_num, page in enumerate(original_pdf.pages, 1):
+            packet = io.BytesIO()  # Новый буфер для каждой страницы с номером
+            can = canvas.Canvas(packet, pagesize=(float(page.MediaBox[2]), float(page.MediaBox[3])))
+            can.setFont("Roboto-Regular", 10)
+
+            # Здесь используйте /MediaBox для получения размеров страницы
+            page_width = float(page.MediaBox[2])
+            can.drawString(page_width - (70 * mm), 20 * mm, f"Страница {page_num} из {len(original_pdf.pages)}")
+            can.save()
+            packet.seek(0)
+            page_with_number = PdfReader(packet)
+
+
+            writer.addpage(page)
+            writer.trailer.Root.AcroForm.update(PdfReader(packet).trailer.Root.AcroForm)
+
+        output = io.BytesIO()
+        writer.write(output)
+        output.seek(0)
+
+        return output
+
+    except Exception as e:
+        logger.error(f"Ошибка в add_page_numbers: {str(e)}")
+        return pdf_buffer
 
 # Генерация пустого PDF
 def create_empty_pdf(buffer):

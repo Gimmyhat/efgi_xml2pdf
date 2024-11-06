@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
+
 TEST_MODE = os.getenv('TEST_MODE', 'True').lower() == 'true'
 
 if TEST_MODE:

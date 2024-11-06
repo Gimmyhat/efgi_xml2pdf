@@ -1,12 +1,10 @@
+# logger.py
 import logging
 import os
 import datetime
 
 from config import LOG_FILE_PATH
 
-# Создаем логгер
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 # Формат сообщений с московским временем
 class MoscowFormatter(logging.Formatter):
@@ -22,9 +20,14 @@ class MoscowFormatter(logging.Formatter):
                 s = dt.isoformat()
         return s
 
+
 formatter = MoscowFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Если лог-файл не существует, создаем его
+log_dir = os.path.dirname(LOG_FILE_PATH)
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
 if not os.path.exists(LOG_FILE_PATH):
     with open(LOG_FILE_PATH, "w") as f:
         pass  # Просто создаем пустой файл
@@ -39,11 +42,14 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(formatter)
 
-# Добавляем обработчики к корневому логгеру
-root_logger = logging.getLogger()  # Получаем корневой логгер
-if not root_logger.handlers:
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
 
 def get_logger(name):
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)  # Устанавливаем уровень логирования для логгера
+
+    # Добавляем обработчики к логгеру, если их еще нет
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger

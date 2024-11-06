@@ -16,7 +16,7 @@ from fastapi.security import HTTPBasic
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import STORAGE_PATH, OUTPUT_PATH, FILE_ERRORS_PATH, LOG_FILE_PATH, PAGES
+from config import STORAGE_PATH, OUTPUT_PATH, FILE_ERRORS_PATH, LOG_FILE_PATH, PAGES, USERNAME, PASSWORD
 from logger import get_logger
 from pdf_utils import create_error_pdf
 from xml_processor import convert_xml_to_pdf, find_values_in_xml
@@ -36,9 +36,6 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # Указываем каталог для статических файлов
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
-
-USERNAME = os.getenv("USERNAME")
-PASSWORD = os.getenv("PASSWORD")
 
 # Загрузка ошибок из файла при запуске приложения
 try:

@@ -120,10 +120,14 @@ def extract_deposit_info_from_xml(root):
     return opi_deposits, non_opi_deposits
 
 
+def enumerate_filter(iterable):
+    return list(enumerate(iterable))
+
 def render_template(template_name, context, project_path):
     try:
         templates_dir = os.path.join(project_path, 'templates')
         env = Environment(loader=FileSystemLoader(templates_dir))
+        env.filters['enumerate'] = enumerate_filter # Регистрируем фильтр
         template = env.get_template(template_name)
         return template.render(context)
     except Exception as e:
@@ -167,7 +171,8 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
             "has_non_opi_deposits": bool(non_opi_deposits), # Флаг наличия других месторождений
         }
 
-        context['is_10'] = 1 if len(context.get('deposit_info_list', [])) == 10 else 0
+        context['is_10'] = 1 if len(context.get('opi_deposits', [])) + len(
+            context.get('non_opi_deposits', [])) == 10 else 0
 
         # Генерация HTML из шаблона
         html_content = render_template("template2.html", context, project_path)
@@ -180,7 +185,7 @@ async def convert_xml_to_pdf(xml_content: str, project_path: str):
                 size: A4;
                 margin-top: 10mm;
                 margin-right: 20mm;
-                margin-bottom: 20mm;
+                margin-bottom: 35mm;
                 margin-left: 10mm;
             }
         ''')
