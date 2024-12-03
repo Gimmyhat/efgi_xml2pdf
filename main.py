@@ -1,4 +1,4 @@
-# main_app.py
+# main.py
 import uvicorn
 from app.main_app import app
 

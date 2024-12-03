@@ -2,10 +2,10 @@ version: '3.8'
 
 services:
   server-print:
-    image: geolirk.cr.cloud.ru/efgi-serv-print-257:latest
+    image: gimmyhat/efgi-serv-print-257:v1.175
     ports:
-      - "8001:8000"
-    volumes:
-      - .:/app
+      - "8003:8000"
+#    volumes:
+#      - .:/app
     environment:
       - PYTHONUNBUFFERED=1

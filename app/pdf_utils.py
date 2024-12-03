@@ -14,7 +14,6 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.signers.pdf_signer import PdfSigner
 from pdfrw import PdfReader, PdfWriter, PageMerge
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
@@ -263,42 +262,26 @@ def add_signature_stamp(input_pdf, output_pdf, signer_name):
 FONT_PATH = os.path.join('static', 'fonts', 'Roboto-Regular.ttf')
 
 def add_page_numbers(pdf_buffer):
-    try:
-        original_pdf = PdfReader(pdf_buffer)
-        writer = PdfWriter()
+    pdf_reader = PdfReader(pdf_buffer)
+    pdf_writer = PdfWriter()
 
-        try:
-            pdfmetrics.registerFont(TTFont("Roboto-Regular", FONT_PATH))
-        except Exception as e:
-            logger.error(f"Ошибка регистрации шрифта: {e}")
-            # Обработка, например, fallback на стандартный шрифт
+    for page_num, page in enumerate(pdf_reader.pages):
+        packet = io.BytesIO()
+        can = canvas.Canvas(packet, pagesize=letter)
+        can.setFont("Roboto-Regular", 10)
+        can.drawString(500, 20, f"Страница {page_num + 1} из {len(pdf_reader.pages)}")
+        can.save()
+        packet.seek(0)
 
+        new_pdf = PdfReader(packet)
+        merger = PageMerge(page)
+        merger.add(new_pdf.pages[0]).render()
+        pdf_writer.addpage(page)
 
-        for page_num, page in enumerate(original_pdf.pages, 1):
-            packet = io.BytesIO()  # Новый буфер для каждой страницы с номером
-            can = canvas.Canvas(packet, pagesize=(float(page.MediaBox[2]), float(page.MediaBox[3])))
-            can.setFont("Roboto-Regular", 10)
-
-            # Здесь используйте /MediaBox для получения размеров страницы
-            page_width = float(page.MediaBox[2])
-            can.drawString(page_width - (70 * mm), 20 * mm, f"Страница {page_num} из {len(original_pdf.pages)}")
-            can.save()
-            packet.seek(0)
-            page_with_number = PdfReader(packet)
-
-
-            writer.addpage(page)
-            writer.trailer.Root.AcroForm.update(PdfReader(packet).trailer.Root.AcroForm)
-
-        output = io.BytesIO()
-        writer.write(output)
-        output.seek(0)
-
-        return output
-
-    except Exception as e:
-        logger.error(f"Ошибка в add_page_numbers: {str(e)}")
-        return pdf_buffer
+    output_buffer = io.BytesIO()
+    pdf_writer.write(output_buffer)
+    output_buffer.seek(0)
+    return output_buffer
 
 # Генерация пустого PDF
 def create_empty_pdf(buffer):
